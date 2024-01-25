@@ -47,6 +47,8 @@ class A2C_Net(nn.Module):
         policy = F.softmax(self.policyFunc(x), dim=1)
         value = self.valueFunc(x)
 
+        policy = torch.clamp(policy, 1e-8, 1-1e-8)
+
         return policy, value
 
 
@@ -63,6 +65,7 @@ class Agent_A2C(object):
         else:
             # TODO: To determined by the transformer
             self.state_size = args.decoder_size
+        # self.state_size = env.state_size
         if not args.spt:
             if args.cont:
                 self.action_size = env.action_space.shape[0]
@@ -78,6 +81,7 @@ class Agent_A2C(object):
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
 
+        torch.manual_seed(args.seed)
         self.model = A2C_Net(self.state_size, self.action_size).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.LR)
 
@@ -116,7 +120,7 @@ class Agent_A2C(object):
         if random.random() > eps:
             # action = np.take(self.env.action_space, np.argmax(policy.cpu().data.numpy()))
             # action = self.env.action_space[np.argmax(policy.cpu().data.numpy())]
-            action = np.argmax(policy.cpu().data.numpy()).max()
+            action = np.argmax(policy.cpu().detach().data.numpy()).max()
         else:
             policy = policy.cpu().detach().numpy()
             action = np.random.choice(self.action_size, 1, p=policy[0]).max()

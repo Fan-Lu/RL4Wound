@@ -14,6 +14,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from utils.memories import ReplayBuffer
+from cfgs.config_ddqn import DDQNParameters
+
+import os
 
 class QNetwork(nn.Module):
     """Actor (Policy) Model."""
@@ -136,6 +139,139 @@ class Agent_DQN(object):
             action_values = self.model(state)
         self.model.train()
         
+        # Epsilon-greedy action selection
+        if random.random() > eps:
+            return np.argmax(action_values.cpu().data.numpy())
+        else:
+            return random.choice(np.arange(self.action_size))
+
+    def learn(self, experiences):
+        '''
+        Update value parameters using given batch of experiences tuples
+
+        :param experiences:
+        :return:
+        '''
+        states, actions, rewards, next_states, dones = experiences
+
+        # Get max predicted Q values (for next states) from the target model
+        Q_target_next = self.qnet_target(next_states).detach().max(1)[0].unsqueeze(1)
+        # Compute Q targets for current states
+        Q_targets = rewards + (self.GAMMA * Q_target_next * (1 - dones))
+
+        # Get expected Q values from local model
+        Q_expected = self.model(states).gather(1, actions)
+
+        # Compute loss
+        loss = F.mse_loss(Q_expected, Q_targets)
+        # Minimize the loss
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        # ------------------------ update the target network ------------------------------ #
+        self.soft_update(self.model, self.qnet_target)
+
+    def soft_update(self, local_model, target_model):
+        '''
+        Soft update model parameters
+        theta_target = tau * theta_local + (1 - tau) * theta_target
+
+        :param local_model: (PyTorch model) weights will be copied from
+        :param target_model: (PyTorch model) weights will be copied to
+        :return:
+        '''
+
+        for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
+            target_param.data.copy_(self.TAU * local_param.data + (1 - self.TAU) * target_param.data)
+
+
+class Agent_DDQN(object):
+
+    def __init__(self, deviceArgs, writer):
+        '''
+
+        :param n_observations: (int) dimension of each state
+        :param n_actions: (int) dimension of each action
+        :param buffer_size:
+        :param bach_size:
+        :param seed:
+        :param TAU: (float) soft update of q target
+        :param UPDATE_EVERY:
+        :param GAMMA: (float) discount factor
+        :param LR:
+        :param gpu:
+        '''
+
+        args = DDQNParameters()
+        self.args = args
+        self.state_size = 4
+        self.action_size = 21
+        # self.action_size = env.action_size
+        self.batch_size = args.batch_size
+        self.LR = args.LR
+        self.TAU = args.TAU
+        self.GAMMA = args.GAMMA
+        self.UPDATE_EVERY = args.UPDATE_EVERY
+
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
+
+        self.qnet_target = QNetwork(self.state_size, self.action_size, args.seed).to(self.device)
+        # Local Qnet
+        self.model = QNetwork(self.state_size, self.action_size, args.seed).to(self.device)
+
+        self.optimizer = optim.Adam(self.model.parameters(), lr=args.LR)
+
+        # Replay memory
+        self.memory = ReplayBuffer(self.state_size, self.action_size, args.buffer_size, self.batch_size, self.device,
+                                   args.seed)
+        # Initialize time step (for updating every UPDATE_EVERY step)
+        self.t_step = 0
+        self.upCnt = 0
+
+        self.model_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/deepRL/models_wound_{}/'.format(deviceArgs.wound_num)
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+
+    def step(self, state, action, reward, next_state, done):
+        '''
+
+        :param state:
+        :param action:
+        :param reward:
+        :param next_state:
+        :param done:
+        :return:
+        '''
+
+        # save experience in replay memory
+        self.memory.push(state, action, reward, next_state, done)
+
+        # Learn every UPDATE_EVERY time steps
+        self.t_step = (self.t_step + 1) % self.UPDATE_EVERY
+        if self.t_step == 0:
+            # If enough samples are available in memory, get random subset and learn every UPDATE_EVERY steps
+            if self.memory.__len__() > self.batch_size:
+                experiences = self.memory.sample()
+                self.learn(experiences)
+
+                self.upCnt += 1
+                torch.save(self.model.state_dict(), self.model_dir + 'checkpoint_RL_ep_{}.pth'.format(self.upCnt))
+
+    def act(self, state, eps=0.):
+        '''
+        Returns actions for given state as per current policy
+
+        :param state:
+        :param eps: (float) epsilon, for epsilon-greedy action selection
+        :return:
+        '''
+        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            action_values = self.model(state)
+        self.model.train()
+
         # Epsilon-greedy action selection
         if random.random() > eps:
             return np.argmax(action_values.cpu().data.numpy())

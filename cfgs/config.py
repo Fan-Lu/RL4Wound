@@ -7,6 +7,7 @@
 
 import time
 import argparse
+from distutils.util import strtobool
 
 
 def GetParameters():
@@ -45,7 +46,7 @@ def GetParameters():
     parser.add_argument('--spt', default=False, type=bool, help='whether to do spatio and temporal control')
     parser.add_argument('--cont', default=False, type=bool, help='whether or not to continuous actions')
 
-    parser.add_argument('--action_size', default=201, type=int, help=' ')
+    parser.add_argument('--action_size', default=501, type=int, help=' ')
 
     parser.add_argument('--check_opt', default=False, type=bool,
                         help='Whether to use policy from ODE paper, if set to False, use RL ')
@@ -56,7 +57,7 @@ def GetParameters():
     parser.add_argument('--X_pump', default=80, type=int,
                         help='Position of ion pump that creates EF, attracting macrophages')
     parser.add_argument('--t_days', default=60, type=int, help='Total number of days')
-    parser.add_argument('--t_nums', default=61, type=int, help='Dived t_days into t_nums')
+    parser.add_argument('--t_nums', default=121, type=int, help='Dived t_days into t_nums')
     parser.add_argument('--t_nums_sim', default=601, type=int, help='Dived t_days into t_nums')
     parser.add_argument('--r', default=60, type=int, help='wound position where we exam')
     parser.add_argument('--Tc', default=3.0, type=float, help='Final time needs to divided by Tc')
@@ -75,17 +76,6 @@ def GetParameters():
     parser.add_argument('--x_target', default=20, type=int,
                         help='pre-defined target current')
 
-    # parser.add_argument('--cur_device_dir', default='~/Desktop/Close_Loop_Actuation/Output/', type=str,
-    #                     help='directory for loading current values')
-    # parser.add_argument('--cur_invio_dir', default='~/Desktop/Close_Loop_Actuation/data_save/', type=str,
-    #                     help='directory for saving current values')
-    # parser.add_argument('--vol_invio_dir', default='~/Desktop/Close_Loop_Actuation/', type=str,
-    #                     help='directory for saving voltage values')
-    # parser.add_argument('--err_invio_dir', default='~/Desktop/Close_Loop_Actuation/data_save/', type=str,
-    #                     help='directory for saving error values')
-    # parser.add_argument('--pre_healnet_dir', default='~/Desktop/Close_Loop_Actuation/Output/', type=str,
-    #                     help='directory for loading healnet predictions')
-
     parser.add_argument('--pre_healnet_dir', default='../../../ExpDataDARPA/res_device/healnet/', type=str,
                         help='directory for loading healnet values')
     parser.add_argument('--cur_device_dir', default='../../../ExpDataDARPA/res_device/Output/', type=str,
@@ -99,7 +89,9 @@ def GetParameters():
     ########################################################################################################
 
     # RL Related
-    parser.add_argument('--alg_rl', default='ppo', type=str, help='dqn, a2c, ppo, td3')
+    parser.add_argument('--alg_rl', default='a2c', type=str, help='dqn, a2c, ppo, td3')
+
+    parser.add_argument('--nscale', default=3.0, type=float)
 
     parser.add_argument('--model_dir', default='./res/models/', type=str, help='dqn, a2c, ppo, td3')
     parser.add_argument('--data_dir', default='./res/data/', type=str, help='dqn, a2c, ppo')
@@ -107,13 +99,14 @@ def GetParameters():
 
     parser.add_argument('--n_episodes', default=100000, type=int, help='Number of training episodes')
     parser.add_argument('--eps_start', default=1.0, type=float, help='Epsilon Greedy, epsilon start value')
-    parser.add_argument('--eps_end', default=0.01, type=float, help='Epsilon Greedy, epsilon end value')
+    parser.add_argument('--eps_end', default=0.1, type=float, help='Epsilon Greedy, epsilon end value')
     # eps_decay 0.995
-    parser.add_argument('--eps_decay', default=0.995, type=float, help='Epsilon Greedy, epsilon decay rate')
+    parser.add_argument('--eps_decay', default=0.999, type=float, help='Epsilon Greedy, epsilon decay rate')
 
     # close loop related
-    parser.add_argument('--ctr', default=True, type=bool, help='close loop to decide action size')
-    parser.add_argument('--cloose_loop', default=True, type=bool, help='close loop to decide action size')
+    parser.add_argument('--ctr', default=False, type=lambda x: bool(strtobool(x)),
+                        help='close loop to decide action size')
+    parser.add_argument('--cloose_loop', default=True, type=lambda x: bool(strtobool(x)), help='close loop to decide action size')
     parser.add_argument('--decoder_size', default=5, type=int, help='state size of decoder')
 
     # DQN Related
@@ -121,9 +114,9 @@ def GetParameters():
     parser.add_argument('--buffer_size', default=int(1e3), type=int, help='replay buffer size')
     parser.add_argument('--TAU', default=1e-3, type=float, help='soft update')
     parser.add_argument('--UPDATE_EVERY', default=4, type=int, help='UPDATE_EVERY')
-    parser.add_argument('--GAMMA', default=0.95, type=float, help='discount factor')
+    parser.add_argument('--GAMMA', default=0.995, type=float, help='discount factor')
     # LR 5e-4
-    parser.add_argument('--LR', default=5e-4, type=float, help='learning rate')
+    parser.add_argument('--LR', default=1e-5, type=float, help='learning rate')
     parser.add_argument('--gpu', default=False, type=bool, help='whether to use GPU')
 
     # A3C Related

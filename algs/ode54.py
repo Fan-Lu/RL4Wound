@@ -16,78 +16,88 @@ from torch.autograd.functional import jacobian
 
 
 from utils.memories import TransCache
-from envs.env import dynamics
+from envs.env import dynamics, dynamics5
+
+
+class LogCoshLoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, y_t, y_prime_t):
+        ey_t = y_t - y_prime_t
+        return torch.mean(torch.log(torch.cosh(ey_t + 1e-12)))
 
 
 class Transformer(nn.Module):
 
-    def __init__(self, in_dim, out_dim):
+    def __init__(self, in_dim, out_dim, nscale):
         '''
         Find mapping between non-linear and linear models
         '''
         super(Transformer, self).__init__()
-        torch.manual_seed(0)
+
+        # torch.manual_seed(args.seed)
         self.in_dim = in_dim
         self.out_dim = out_dim
 
-        self.fc11 = nn.Linear(self.in_dim, 128)
-        self.fc12 = nn.Linear(128, 256)
-        self.fc13 = nn.Linear(256, 128)
-        self.fc14 = nn.Linear(128, self.out_dim)
+        self.fc11 = nn.Linear(self.in_dim, 64)
+        self.fc12 = nn.Linear(64, 128)
+        self.fc13 = nn.Linear(128, 64)
+        self.fc14 = nn.Linear(64, self.out_dim)
 
-        self.fc21 = nn.Linear(self.out_dim, 128)
-        self.fc22 = nn.Linear(128, 256)
-        self.fc23 = nn.Linear(256, 128)
-        self.fc24 = nn.Linear(128, self.in_dim)
+        self.fc21 = nn.Linear(self.out_dim, 64)
+        self.fc22 = nn.Linear(64, 128)
+        self.fc23 = nn.Linear(128, 64)
+        self.fc24 = nn.Linear(64, self.in_dim)
 
         # self.Amat = nn.Linear(out_dim, out_dim, bias=False)
-        kh, ki, kp = 0.5, 0.3, 0.1
+        kh, ki, kp = 0.1, 0.1, 0.1
         AInit = np.array([[kh, 0, 0, 0],
                           [kh, ki, 0, 0],
                           [0, ki, kp, 0],
                           [0, 0, kp, 0]])
-        AMast = np.array([[-1, 0, 0, 0],
+        AMask = np.array([[-1, 0, 0, 0],
                           [1, -1, 0, 0],
                           [0, 1, -1, 0],
                           [0, 0, 1, 0]])
 
-        self.outMap = torch.from_numpy(np.array([1, 1, 1, 3, 1])).float().view(1, -1)
-        self.AMask = torch.from_numpy(AMast).float()
+        self.outMap = torch.from_numpy(np.array([1, 1, 1, nscale, 1])).float().view(1, -1)
+        self.AMask = torch.from_numpy(AMask).float()
         self.Amat = nn.Parameter(torch.from_numpy(AInit).float(), requires_grad=True)
         self.Amat_masked = torch.multiply(F.relu(self.Amat), self.AMask)
-        self.Amat.requires_grad = True
 
     def map524(self, x):
-        x2z = F.leaky_relu(self.fc11(x))
-        x2z = F.leaky_relu(self.fc12(x2z))
-        x2z = F.leaky_relu(self.fc13(x2z))
-        x2z = F.softmax(self.fc14(x2z), dim=1)
-        return x2z
+        z = F.relu(self.fc11(x))
+        z = F.relu(self.fc12(z))
+        z = F.relu(self.fc13(z))
+        z = F.softmax(self.fc14(z), dim=1)
+        return z
 
-    def map425(self, x2z):
-        z2x = F.leaky_relu(self.fc21(x2z))
-        z2x = F.leaky_relu(self.fc22(z2x))
-        z2x = F.leaky_relu(self.fc23(z2x))
-        z2x = F.softmax(self.fc24(z2x), dim=1)
+    def map425(self, z):
+        x_hat = F.relu(self.fc21(z))
+        x_hat = F.relu(self.fc22(x_hat))
+        x_hat = F.relu(self.fc23(x_hat))
+        x_hat = F.sigmoid(self.fc24(x_hat))
 
-        z2x = torch.multiply(z2x, self.outMap)
+        x_hat = torch.multiply(x_hat, self.outMap)
 
-        return z2x
+        return x_hat
 
-    def matmult(self, x2z):
+    def matmult(self, z):
         # self.Amat_masked = torch.multiply(F.relu(self.Amat), self.AMask)
         # Az = torch.matmul(self.Amat_masked, x2z.T)
+        # self.Amat_masked = torch.clamp(torch.multiply(F.relu(self.Amat), self.AMask), min=0.01, max=1.0)
         self.Amat_masked = torch.multiply(F.relu(self.Amat), self.AMask)
-        Az = torch.matmul(self.Amat_masked, x2z.T).T
+        Az = torch.matmul(self.Amat_masked, z.T).T
 
         return Az
 
     def forward(self, x):
-        x2z = self.map524(x)
-        z2x = self.map425(x2z)
-        AN = self.matmult(x2z)
+        z = self.map524(x)
+        x_hat = self.map425(z)
+        AN = self.matmult(z)
 
-        return x2z, AN, z2x
+        return z, AN, x_hat
 
 
 class Agent_Trans(object):
@@ -97,8 +107,11 @@ class Agent_Trans(object):
         Advantage Actor Critic
         '''
         super(Agent_Trans, self).__init__()
+
         self.env = env
         self.args = args
+
+        torch.manual_seed(self.args.seed)
 
         if not self.args.cloose_loop:
             self.state_size = env.state_size
@@ -113,29 +126,41 @@ class Agent_Trans(object):
         else:
             self.action_size = env.action_space.shape[0]
         self.action_dim = 1
-        self.batch_size = self.args.batch_size
+        # self.batch_size = self.args.batch_size
         self.LR = self.args.LR
         self.TAU = self.args.TAU
         self.GAMMA = self.args.GAMMA
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
 
-        self.model = Transformer(in_dim=5, out_dim=4).to(self.device)
+        self.model = Transformer(in_dim=5, out_dim=4, nscale=args.nscale).to(self.device)
         # TODO: Integrated into transformer
         self.model.AMask = self.model.AMask.to(self.device)
         self.model.outMap = self.model.outMap.to(self.device)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.LR)
-        self.mse_loss = nn.MSELoss()
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
+        # self.optimizer = optim.Adadelta(self.model.parameters())
+        self.mse_loss = nn.MSELoss(reduction='none')
+        self.ent_loss = nn.CrossEntropyLoss()
+        self.log_loss = LogCoshLoss()
+        self.hub_loss = nn.HuberLoss(delta=1e-1, reduction='none')
+        self.mae_loss = nn.L1Loss(reduction="none")
+        weights = torch.tensor([0.2, 0.2, 0.2, 0.05, 0.35])
+        self.bce_loss = nn.BCEWithLogitsLoss(weight=weights)
 
-        self.gamma = 1.0 + 5e-4
-        self.lam = 0.9
-        self.min_lam = 0.01
+        self.gamma = 0.9995
+        self.lam = 0.99
+        self.min_lam = 0.2
+
+        self.batch_size = 4
 
         # Replay memory
-        self.memory = TransCache(batch_size=self.env.t_nums - 1, device=self.device)
+        # self.memory = TransCache(batch_size=self.env.t_nums - 1, device=self.device)
+        self.memory = TransCache(batch_size=self.batch_size, device=self.device)
 
-    def step(self, state, action, reward, next_state, done):
+        self.rt_loss = 0.0
+
+    def step(self, state, action):
         '''
 
         :param state:
@@ -147,7 +172,11 @@ class Agent_Trans(object):
         '''
 
         # save experience in replay memory
-        self.memory.push(state, action, reward, next_state, done)
+        # self.memory.push(state, action, reward, next_state, done)
+        self.memory.push(state, action)
+        if self.memory.__len__() >= self.batch_size:
+            self.rt_loss = self.learn()
+        return self.rt_loss
 
     def learn(self):
         '''
@@ -156,46 +185,53 @@ class Agent_Trans(object):
         :param experiences:
         :return:
         '''
-        states, actions, rewards, next_states, dones = self.memory.sample()
+        states, actions = self.memory.sample()
 
         batch_loss = []
-        for t in range(self.env.t_nums - 1):
+        for t in range(self.memory.__len__()):
             # current state obtained from non-linear dynamics
             st_nl = states[t, :].view(1, -1)
-            u = actions[t, :].cpu().data.numpy().max()
+            action = actions[t, :].cpu().data.numpy().max()
             # only key the center position
             st_nl_p0 = st_nl.view(5, self.args.n_cells)[:, 0].view(1, -1)
 
             st_l, st_l_AN, st_nl_apprx = self.model(st_nl_p0)
             jac = jacobian(self.model.map524, st_nl_p0, create_graph=True)
 
+            # TODO: Fix config bug in Numba
             n_cells, spt, X_pump, beta, gamma1, gamma2, rho, mu, alphaTilt, power, kapa, Lam, DTilt, DTilt_n = self.args.n_cells, self.args.spt, self.args.X_pump, self.args.beta, self.args.gamma1, self.args.gamma2, self.args.rho, self.args.mu, self.args.alphaTilt, self.args.power, self.args.kapa, self.args.Lam, self.args.DTilt, self.args.DTilt_n
             arrgs = (n_cells, spt, X_pump, beta, gamma1, gamma2, rho, mu, alphaTilt, power, kapa, Lam, DTilt, DTilt_n)
-            dxdt = dynamics(st_nl.cpu().data.numpy().reshape(-1), None, u, arrgs)
+            dxdt = dynamics5(st_nl.cpu().data.numpy().reshape(-1), None, action, arrgs)
 
             # Get ODE at wound center
             dxdt_5 = torch.from_numpy(dxdt.reshape(5, self.args.n_cells)[:, 0]).float().to(self.device).view(-1, 1)
-            Jn_dxdt = torch.matmul(jac[0, :, 0, :], dxdt_5).view(1, -1)
+            Jn_dxdt_5 = torch.matmul(jac[0, :, 0, :], dxdt_5).view(1, -1)
 
             # m1 macrophage
             m1 = st_nl_p0.cpu().data.numpy()[:, 1][0]
-            B = torch.from_numpy(np.array([[0,  0, 0, 0, 0],
+            B = torch.from_numpy(np.array([[0,   0, 0, 0, 0],
                                            [0, -m1, 0, 0, 0],
                                            [0,  m1, 0, 0, 0],
-                                           [0,  0, 0, 0, 0],
-                                           [0,  0, 0, 0, 0]])).float().to(self.device)
-            u_tensor = torch.from_numpy(np.array([u, u, u, u, u])).float().to(self.device).view(-1, 1)
+                                           [0,   0, 0, 0, 0],
+                                           [0,   0, 0, 0, 0]])
+                                 ).float().to(self.device)
+            u_tensor = torch.from_numpy(np.array([action, action, action, action, action])).float().to(self.device).view(-1, 1)
             Jn_bu = torch.matmul(jac[0, :, 0, :], torch.matmul(B, u_tensor)).view(1, -1)
 
-            mse1 = self.mse_loss(Jn_dxdt, st_l_AN + Jn_bu)
-            mse2 = self.mse_loss(st_nl_p0, st_nl_apprx)
+            # loss for ode approximation
+            mse1 = self.mse_loss(Jn_dxdt_5, st_l_AN + Jn_bu)
+            # regularization loss for decoder
+            mse2 = self.mse_loss(st_nl_apprx, st_nl_p0)
+            # mse2 = (mse2 * torch.tensor([1.0, 1.0, 1.0, 1.0/3.0, 1.0]))
+            # bio interpretation loss
             mse3 = self.mse_loss(st_l[:, :3], st_nl_p0[:, :3])
-            loss = mse1 + self.lam * (mse2 + 0.9 * mse3)
+
+            loss = mse1.mean() + self.lam * (mse2.mean() + mse3.mean())
+
             batch_loss.append(loss)
 
-        self.lam = max(self.lam / self.gamma, self.min_lam)
-
-        batch_loss = torch.vstack(batch_loss).view(-1, 1).mean()
+        self.lam = max(self.min_lam, self.lam * self.gamma)
+        batch_loss = torch.vstack(batch_loss).view(self.memory.__len__(), -1).mean()
         self.optimizer.zero_grad()
         batch_loss.backward()
         self.optimizer.step()
@@ -204,3 +240,4 @@ class Agent_Trans(object):
         self.memory.reset()
 
         return batch_loss.cpu().data.numpy().max()
+

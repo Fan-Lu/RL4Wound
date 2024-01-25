@@ -22,6 +22,7 @@ from numba import njit, prange
 
 from numba import jit
 
+
 def actuator(t, t1, dt):
     y = 0
     if t > t1 and t < t1 + dt:
@@ -65,73 +66,51 @@ def dynamicsAcc(z, t, action, arrgs):
 
     n_cells, spt, X_pump, beta, gamma1, gamma2, rho, mu, alphaTilt, power, kapa, Lam, DTilt, DTilt_n = arrgs
 
-
-    dadt_l = np.empty(n_cells)
-    dm1dt_l = np.empty(n_cells)
-    dm2dt_l = np.empty(n_cells)
-    dcdt_l = np.empty(n_cells)
-    dndt_l = np.empty(n_cells)
+    dzdt = np.empty(n_cells * 5)
 
     amplitude = 1.0
     n = 1.25
 
-    # if not spt:
-    #     theta = action
-    # # both temporal and spatio control
-    # else:
-    #     theta, pos = action[0], int(action[1])
-    #     args.X_pump = pos
     theta = action
 
     for i in prange(n_cells):
-
         x_z = (i - X_pump) / 10.0
         tetta = amplitude * np.exp(-((x_z ** 2) / n))
 
-        at, m1t, m2t, ct, nt = (z[i],                       # debris
+        at, m1t, m2t, ct, nt = (z[i],                  # debris
                                 z[i + n_cells],        # M1
                                 z[i + 2 * n_cells],    # M2
                                 z[i + 3 * n_cells],    # temp tissue
                                 z[i + 4 * n_cells])    # new tissue
-        dadt = -at * m1t
-        dm1dt = (beta * at
-                 - at * m1t
-                 - gamma1 * m1t
-                 - rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
-                 - theta * (tetta * m1t))
-        dm2dt = (rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
-                 - gamma2 * m2t
-                 + theta * (tetta * m1t))
-        dcdt = m2t - mu * ct
-        dndt = ct * (alphaTilt * nt * (1 - nt))
-        dadt_l[i], dm1dt_l[i], dm2dt_l[i], dcdt_l[i], dndt_l[i] = dadt, dm1dt, dm2dt, dcdt, dndt
+        dzdt[i + 0 * n_cells] = -at * m1t
+        dzdt[i + 1 * n_cells] = (beta * at
+                                 - at * m1t
+                                 - gamma1 * m1t
+                                 - rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
+                                 - theta * (tetta * m1t))
+        dzdt[i + 2 * n_cells] = (rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
+                                 - gamma2 * m2t
+                                 + theta * (tetta * m1t))
+        dzdt[i + 3 * n_cells] = m2t - mu * ct
+        dzdt[i + 4 * n_cells] = ct * (alphaTilt * nt * (1 - nt))
 
-    dm1dt_l[0] += DTilt * (z[1 + n_cells] - z[n_cells]) / (Lam * Lam)
-    dm2dt_l[0] += DTilt * (z[1 + 2 * n_cells] - z[2 * n_cells]) / (Lam * Lam)
-    dndt_l[0] += DTilt_n * (z[3 * n_cells] * (z[1 + 4 * n_cells] - z[4 * n_cells])) / (Lam ** 2)
-
+    # m1
+    dzdt[0 + 1 * n_cells] += DTilt * (z[1 + n_cells] - z[n_cells]) / (Lam * Lam)
+    # m2
+    dzdt[0 + 2 * n_cells] += DTilt * (z[1 + 2 * n_cells] - z[2 * n_cells]) / (Lam * Lam)
+    # new tissue
+    dzdt[0 + 4 * n_cells] += DTilt_n * (z[3 * n_cells] * (z[1 + 4 * n_cells] - z[4 * n_cells])) / (Lam ** 2)
     # second derivative
     for i in prange(1, n_cells - 1):
-        dm1dt_l[i] += DTilt * (z[i - 1 + n_cells] - 2 * z[i + n_cells] + z[i + 1 + n_cells]) / (Lam ** 2)
-        dm2dt_l[i] += DTilt * (z[i - 1 + 2 * n_cells] - 2 * z[i + 2 * n_cells] + z[i + 1 + 2 * n_cells]) / (Lam ** 2)
+        dzdt[i + 1 * n_cells] += DTilt * (z[i - 1 + n_cells] - 2 * z[i + n_cells] + z[i + 1 + n_cells]) / (Lam ** 2)
+        dzdt[i + 2 * n_cells] += DTilt * (z[i - 1 + 2 * n_cells] - 2 * z[i + 2 * n_cells] + z[i + 1 + 2 * n_cells]) / (Lam ** 2)
+        dzdt[i + 4 * n_cells] += DTilt_n * (z[i + 3 * n_cells] * (z[i - 1 + 4 * n_cells] - 2 * z[i + 4 * n_cells] + z[i + 1 + 4 * n_cells])) / (Lam ** 2)
 
-        dndt_l[i] += DTilt_n * (z[i + 3 * n_cells] * (z[i - 1 + 4 * n_cells] - 2 * z[i + 4 * n_cells] + z[i + 1 + 4 * n_cells])) / (Lam ** 2)
     n_c = n_cells - 1
-    dm1dt_l[n_c] += DTilt * (z[n_c - 1 + n_cells] - z[n_c + n_cells]) / (Lam ** 2)
-    dm2dt_l[n_c] += DTilt_n * (z[n_c - 1 + 2 * n_cells] - z[n_c + 2 * n_cells]) / (Lam ** 2)
+    dzdt[n_c + 1 * n_cells] += DTilt * (z[n_c - 1 + n_cells] - z[n_c + n_cells]) / (Lam ** 2)
+    dzdt[n_c + 2 * n_cells] += DTilt_n * (z[n_c - 1 + 2 * n_cells] - z[n_c + 2 * n_cells]) / (Lam ** 2)
+    dzdt[n_c + 4 * n_cells] += DTilt_n * (z[n_c + 3 * n_cells] * (z[n_c - 1 + 4 * n_cells] - 2 * z[n_c + 4 * n_cells] + 1)) / (Lam ** 2)
 
-    dndt_l[n_c] += DTilt_n * (z[n_c + 3 * n_cells] * (z[n_c - 1 + 4 * n_cells] - 2 * z[n_c + 4 * n_cells] + 1)) / (Lam ** 2)
-    # dzdt = np.concatenate([dadt_l, dm1dt_l, dm2dt_l, dcdt_l, dndt_l], axis=0)
-
-    alldt = [dadt_l, dm1dt_l, dm2dt_l, dcdt_l, dndt_l]
-    dzdt = np.empty(n_cells * len(alldt))
-    idx = 0
-    for xx in alldt:
-        for dxdt in xx:
-            dzdt[idx] = dxdt
-            idx += 1
-
-    # dzdt = np.array([dadt_l, dm1dt_l, dm2dt_l, dcdt_l, dndt_l]).reshape(-1)
     return dzdt
 
 
@@ -151,73 +130,115 @@ def dynamics(z, t, action, arrgs):
 
     n_cells, spt, X_pump, beta, gamma1, gamma2, rho, mu, alphaTilt, power, kapa, Lam, DTilt, DTilt_n = arrgs
 
-
-    dadt_l = np.empty(n_cells)
-    dm1dt_l = np.empty(n_cells)
-    dm2dt_l = np.empty(n_cells)
-    dcdt_l = np.empty(n_cells)
-    dndt_l = np.empty(n_cells)
+    dzdt = np.empty(n_cells * 5)
 
     amplitude = 1.0
     n = 1.25
 
-    # if not spt:
-    #     theta = action
-    # # both temporal and spatio control
-    # else:
-    #     theta, pos = action[0], int(action[1])
-    #     args.X_pump = pos
     theta = action
 
     for i in range(n_cells):
-
         x_z = (i - X_pump) / 10.0
         tetta = amplitude * np.exp(-((x_z ** 2) / n))
 
-        at, m1t, m2t, ct, nt = (z[i],                       # debris
+        at, m1t, m2t, ct, nt = (z[i],                  # debris
                                 z[i + n_cells],        # M1
                                 z[i + 2 * n_cells],    # M2
                                 z[i + 3 * n_cells],    # temp tissue
                                 z[i + 4 * n_cells])    # new tissue
-        dadt = -at * m1t
-        dm1dt = (beta * at
-                 - at * m1t
-                 - gamma1 * m1t
-                 - rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
-                 - theta * (tetta * m1t))
-        dm2dt = (rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
-                 - gamma2 * m2t
-                 + theta * (tetta * m1t))
-        dcdt = m2t - mu * ct
-        dndt = ct * (alphaTilt * nt * (1 - nt))
-        dadt_l[i], dm1dt_l[i], dm2dt_l[i], dcdt_l[i], dndt_l[i] = dadt, dm1dt, dm2dt, dcdt, dndt
+        dzdt[i + 0 * n_cells] = -at * m1t
+        dzdt[i + 1 * n_cells] = (beta * at
+                                 - at * m1t
+                                 - gamma1 * m1t
+                                 - rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
+                                 - theta * (tetta * m1t))
+        dzdt[i + 2 * n_cells] = (rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
+                                 - gamma2 * m2t
+                                 + theta * (tetta * m1t))
+        dzdt[i + 3 * n_cells] = m2t - mu * ct
+        dzdt[i + 4 * n_cells] = ct * (alphaTilt * nt * (1 - nt))
 
-    dm1dt_l[0] += DTilt * (z[1 + n_cells] - z[n_cells]) / (Lam * Lam)
-    dm2dt_l[0] += DTilt * (z[1 + 2 * n_cells] - z[2 * n_cells]) / (Lam * Lam)
-    dndt_l[0] += DTilt_n * (z[3 * n_cells] * (z[1 + 4 * n_cells] - z[4 * n_cells])) / (Lam ** 2)
-
+    # m1
+    dzdt[0 + 1 * n_cells] += DTilt * (z[1 + n_cells] - z[n_cells]) / (Lam * Lam)
+    # m2
+    dzdt[0 + 2 * n_cells] += DTilt * (z[1 + 2 * n_cells] - z[2 * n_cells]) / (Lam * Lam)
+    # new tissue
+    dzdt[0 + 4 * n_cells] += DTilt_n * (z[3 * n_cells] * (z[1 + 4 * n_cells] - z[4 * n_cells])) / (Lam ** 2)
     # second derivative
     for i in range(1, n_cells - 1):
-        dm1dt_l[i] += DTilt * (z[i - 1 + n_cells] - 2 * z[i + n_cells] + z[i + 1 + n_cells]) / (Lam ** 2)
-        dm2dt_l[i] += DTilt * (z[i - 1 + 2 * n_cells] - 2 * z[i + 2 * n_cells] + z[i + 1 + 2 * n_cells]) / (Lam ** 2)
+        dzdt[i + 1 * n_cells] += DTilt * (z[i - 1 + n_cells] - 2 * z[i + n_cells] + z[i + 1 + n_cells]) / (Lam ** 2)
+        dzdt[i + 2 * n_cells] += DTilt * (z[i - 1 + 2 * n_cells] - 2 * z[i + 2 * n_cells] + z[i + 1 + 2 * n_cells]) / (Lam ** 2)
+        dzdt[i + 4 * n_cells] += DTilt_n * (z[i + 3 * n_cells] * (z[i - 1 + 4 * n_cells] - 2 * z[i + 4 * n_cells] + z[i + 1 + 4 * n_cells])) / (Lam ** 2)
 
-        dndt_l[i] += DTilt_n * (z[i + 3 * n_cells] * (z[i - 1 + 4 * n_cells] - 2 * z[i + 4 * n_cells] + z[i + 1 + 4 * n_cells])) / (Lam ** 2)
     n_c = n_cells - 1
-    dm1dt_l[n_c] += DTilt * (z[n_c - 1 + n_cells] - z[n_c + n_cells]) / (Lam ** 2)
-    dm2dt_l[n_c] += DTilt_n * (z[n_c - 1 + 2 * n_cells] - z[n_c + 2 * n_cells]) / (Lam ** 2)
+    dzdt[n_c + 1 * n_cells] += DTilt * (z[n_c - 1 + n_cells] - z[n_c + n_cells]) / (Lam ** 2)
+    dzdt[n_c + 2 * n_cells] += DTilt_n * (z[n_c - 1 + 2 * n_cells] - z[n_c + 2 * n_cells]) / (Lam ** 2)
+    dzdt[n_c + 4 * n_cells] += DTilt_n * (z[n_c + 3 * n_cells] * (z[n_c - 1 + 4 * n_cells] - 2 * z[n_c + 4 * n_cells] + 1)) / (Lam ** 2)
 
-    dndt_l[n_c] += DTilt_n * (z[n_c + 3 * n_cells] * (z[n_c - 1 + 4 * n_cells] - 2 * z[n_c + 4 * n_cells] + 1)) / (Lam ** 2)
-    # dzdt = np.concatenate([dadt_l, dm1dt_l, dm2dt_l, dcdt_l, dndt_l], axis=0)
+    return dzdt
 
-    alldt = [dadt_l, dm1dt_l, dm2dt_l, dcdt_l, dndt_l]
-    dzdt = np.empty(n_cells * len(alldt))
-    idx = 0
-    for xx in alldt:
-        for dxdt in xx:
-            dzdt[idx] = dxdt
-            idx += 1
 
-    # dzdt = np.array([dadt_l, dm1dt_l, dm2dt_l, dcdt_l, dndt_l]).reshape(-1)
+def dynamics5(z, t, action, arrgs):
+    '''
+    Dynamics of wound healing
+    :param y:   list with length 5
+                y[0]: a
+                y[1]: Macrophages M1
+                y[2]: Macrophages M1
+                y[3]: Temporary tissue
+                y[4]: New Tissue
+    :param X_pump: position of ion pump that creates EF, attracting macrophages
+    :param n_cells:
+    :return: dydt
+    '''
+
+    n_cells, spt, X_pump, beta, gamma1, gamma2, rho, mu, alphaTilt, power, kapa, Lam, DTilt, DTilt_n = arrgs
+
+    dzdt = np.empty(n_cells * 5)
+
+    amplitude = 1.0
+    n = 1.25
+
+    theta = action
+
+    for i in range(1):
+        x_z = (i - X_pump) / 10.0
+        tetta = amplitude * np.exp(-((x_z ** 2) / n))
+
+        at, m1t, m2t, ct, nt = (z[i],                  # debris
+                                z[i + n_cells],        # M1
+                                z[i + 2 * n_cells],    # M2
+                                z[i + 3 * n_cells],    # temp tissue
+                                z[i + 4 * n_cells])    # new tissue
+        dzdt[i + 0 * n_cells] = -at * m1t
+        dzdt[i + 1 * n_cells] = (beta * at
+                                 - at * m1t
+                                 - gamma1 * m1t
+                                 - rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
+                                 - theta * (tetta * m1t))
+        dzdt[i + 2 * n_cells] = (rho * ((m1t ** power) / ((kapa ** power) + (m1t ** power)))
+                                 - gamma2 * m2t
+                                 + theta * (tetta * m1t))
+        dzdt[i + 3 * n_cells] = m2t - mu * ct
+        dzdt[i + 4 * n_cells] = ct * (alphaTilt * nt * (1 - nt))
+
+    # m1
+    dzdt[0 + 1 * n_cells] += DTilt * (z[1 + n_cells] - z[n_cells]) / (Lam * Lam)
+    # m2
+    dzdt[0 + 2 * n_cells] += DTilt * (z[1 + 2 * n_cells] - z[2 * n_cells]) / (Lam * Lam)
+    # new tissue
+    dzdt[0 + 4 * n_cells] += DTilt_n * (z[3 * n_cells] * (z[1 + 4 * n_cells] - z[4 * n_cells])) / (Lam ** 2)
+    # second derivative
+    # for i in range(1, n_cells - 1):
+    #     dzdt[i + 1 * n_cells] += DTilt * (z[i - 1 + n_cells] - 2 * z[i + n_cells] + z[i + 1 + n_cells]) / (Lam ** 2)
+    #     dzdt[i + 2 * n_cells] += DTilt * (z[i - 1 + 2 * n_cells] - 2 * z[i + 2 * n_cells] + z[i + 1 + 2 * n_cells]) / (Lam ** 2)
+    #     dzdt[i + 4 * n_cells] += DTilt_n * (z[i + 3 * n_cells] * (z[i - 1 + 4 * n_cells] - 2 * z[i + 4 * n_cells] + z[i + 1 + 4 * n_cells])) / (Lam ** 2)
+    #
+    # n_c = n_cells - 1
+    # dzdt[n_c + 1 * n_cells] += DTilt * (z[n_c - 1 + n_cells] - z[n_c + n_cells]) / (Lam ** 2)
+    # dzdt[n_c + 2 * n_cells] += DTilt_n * (z[n_c - 1 + 2 * n_cells] - z[n_c + 2 * n_cells]) / (Lam ** 2)
+    # dzdt[n_c + 4 * n_cells] += DTilt_n * (z[n_c + 3 * n_cells] * (z[n_c - 1 + 4 * n_cells] - 2 * z[n_c + 4 * n_cells] + 1)) / (Lam ** 2)
+
     return dzdt
 
 
@@ -233,26 +254,16 @@ def simple(z, t, action):
     return dzdt
 
 
-def linear_dynamic(z, t, action):
-    A, B = action
-    Q = np.eye(A.shape[0])
-    R = np.eye(B.shape[1])
+def linear_dynamic(z, t, u, A, B):
+    # A, B = action
+    # Q = np.eye(A.shape[0])
+    # R = np.eye(B.shape[1])
     z = z.reshape(-1, 1)
-
-    # # Compute the algebraic Riccati equation.
-    # P = linalg.solve_sylvester(A.T, -Q, A - B @ R @ B.T)
-    # if not np.all(np.diag(P) > 0) or np.any(np.real(np.linalg.eigvals(A)) > 0):
-    #     # print('LQR Solution Does Not Exist: Set input to zero!!!')
-    #     u = np.zeros([B.shape[1], 1])
-    # else:
+    # try:
     #     K, S, E = lqr(A, B, Q, R)
     #     u = -K @ z
-    #     # print('LQR Solution Found u: {}'.format(u.squeeze()))
-    try:
-        K, S, E = lqr(A, B, Q, R)
-        u = -K @ z
-    except:
-        u = np.zeros([B.shape[1], 1])
+    # except:
+    #     u = np.zeros([B.shape[1], 1])
 
     dzdt = A @ z + B @ u
     dzdt = list(dzdt.squeeze())
@@ -318,7 +329,7 @@ class WoundEnv(object):
 
         # TODO: Maybe each action last for several intervals?
         # self.duaration_space = np.linspace(2, 2, 1, dtype=int)
-        self.theta_space = np.linspace(0, 1, args.action_size)
+        self.theta_space = np.linspace(0, 10, args.action_size)
 
         if not self.args.spt:
             if args.cont:
@@ -429,7 +440,7 @@ class SimpleEnv(object):
 
         # Hyper parameters
         self.args = args
-        self.t_nums = args.t_nums_sim
+        self.t_nums = args.t_nums
         self.t_days = args.t_days
 
         self.state_size = 4
@@ -500,10 +511,26 @@ class LinearEnv(object):
         self.state = self.y0 = self.state_init
         self.cnter = 0
 
-    def ode_solver(self, action=None, FT=False):
+    def ode_solver(self, action=None, FT=False, agentA=None):
         if not FT:
             tspan_tmp = [self.t_span[self.cnter], self.t_span[self.cnter + 1]]
-            y_tmp = odeint(linear_dynamic, self.y0, tspan_tmp, args=(action,))
+
+            A, B = action
+            Q = np.eye(A.shape[0])
+            Q[3][3] = -1.0
+            R = np.eye(B.shape[1])
+            try:
+                K, S, E = lqr(A, B, Q, R)
+                u = -K @ self.y0.reshape(-1, 1)
+                # y_tmp = odeint(linear_dynamic, self.y0, tspan_tmp, args=(u, A, B,))
+                # set linear system stabalizable flag to be true
+                self.lstb_flag = True
+            except:
+                # u = agent.act(agent_state, eps) if args.ctr and heal_day is None else 0
+                u = np.zeros([B.shape[1], 1])
+                # y_tmp = odeint(linear_dynamic, self.y0, tspan_tmp, args=(u, A, B,))
+                self.lstb_flag = False
+            y_tmp = odeint(linear_dynamic, self.y0, tspan_tmp, args=(u, A, B,))
             self.y0 = y_tmp[1]
             X = np.array(y_tmp[1, :])
         else:
@@ -520,7 +547,7 @@ class LinearEnv(object):
         self.cnter += 1
         self.state = next_state
 
-        return self.state
+        return self.state, self.lstb_flag
 
     def reset(self):
         self.state = self.y0 = self.state_init

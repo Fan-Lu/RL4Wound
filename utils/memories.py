@@ -174,14 +174,14 @@ class TransCache(object):
         self.device = device
         self.memory = deque(maxlen=batch_size)
 
-    def push(self, state, action, reward, next_state, done):
+    def push(self, state, action):
         '''
         Add a new experience to memory
 
         :param experience: (tuple)
         :return:
         '''
-        self.memory.append((state, action, reward, next_state, done))
+        self.memory.append((state, action))
 
     def sample(self):
         '''
@@ -199,7 +199,7 @@ class TransCache(object):
         # dones = torch.from_numpy(np.vstack([e[4] for e in exps if e is not None]).astype(np.uint8)).float().to(self.device)
 
         # return (states, actions, rewards, next_states, dones)
-        return (states, actions, reward, next_state, done)
+        return (states, actions)
 
     def reset(self):
         '''
