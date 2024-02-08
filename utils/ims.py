@@ -64,6 +64,17 @@ def merge_zstack(directory):
 if __name__ == "__main__":
     process = []
 
+    desktop_dir = '../../../../WoundDataDARPA/Porcine_Exp_Davis/Exp_19/'
+    all_dirs = []
+    for i in range(10):
+        daytmp = "Day {}".format(i)
+        im_tmp = desktop_dir + daytmp
+        for ca in os.listdir(im_tmp):
+            im_tmp += ca
+            if os.path.isdir(im_tmp):
+                all_dirs.append(im_tmp)
+
+    print(desktop_dir)
     for im in range(7):
         for i in range(7):
             time.sleep(0.1)

@@ -35,6 +35,8 @@ def DeviceParameters(wound_no, desktop_dir):
     parser.add_argument('--curr_datetime', default=curr_datetime, type=str, help='current date and time')
     parser.add_argument('--desktop_dir', default=desktop_dir, type=str, help='desktop_dir')
     parser.add_argument('--healnet_prob_file_name', default=healnet_prob_file_name, type=str, help='healnet_prob_file_name')
+    parser.add_argument('--deepmapper_prob_file_name', default='./wound_probs_DeepMapper.csv', type=str,
+                        help='healnet_prob_file_name')
     parser.add_argument('--target_current_file_name', default=target_current_file_name, type=str, help='target_current_file_name')
     parser.add_argument('--prabhat_cv_file_name', default=prabhat_cv_file_name, type=str, help='prabhat_cv_file_name')
     parser.add_argument('--fl_curent_file_name', default=fl_curent_file_name, type=str, help='fl_curent_file_name')

@@ -40,7 +40,8 @@ class Autoencoder(nn.Module):
         self.t_b2 = nn.BatchNorm2d(3)
 
         # sampling time
-        self.sample_time = 0.1001
+        # self.sample_time = 0.1001
+        self.sample_time = 0.85
 
         KhMask = np.array([[-1, 0, 0, 0],
                           [1, 0, 0, 0],
