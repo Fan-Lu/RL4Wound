@@ -35,7 +35,7 @@ class ReplayBuffer(object):
         #                                                         "reward",
         #                                                         "next_state",
         #                                                         "done"])
-        self.seed = random.seed(seed)
+        # self.seed = random.seed(seed)
 
     def push(self, state, action, reward, next_state, done):
         '''

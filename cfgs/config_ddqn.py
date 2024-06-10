@@ -110,13 +110,13 @@ def DDQNParameters():
     parser.add_argument('--decoder_size', default=5, type=int, help='state size of decoder')
 
     # DQN Related
-    parser.add_argument('--batch_size', default=8, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=4, type=int, help='batch size')
     parser.add_argument('--buffer_size', default=int(2e1), type=int, help='replay buffer size')
     parser.add_argument('--TAU', default=1e-3, type=float, help='soft update')
     parser.add_argument('--UPDATE_EVERY', default=4, type=int, help='UPDATE_EVERY')
     parser.add_argument('--GAMMA', default=0.995, type=float, help='discount factor')
     # LR 5e-4
-    parser.add_argument('--LR', default=1e-5, type=float, help='learning rate')
+    parser.add_argument('--LR', default=1e-4, type=float, help='learning rate')
     parser.add_argument('--gpu', default=False, type=bool, help='whether to use GPU')
 
     # A3C Related

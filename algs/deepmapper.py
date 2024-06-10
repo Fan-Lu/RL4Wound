@@ -9,6 +9,7 @@ import os
 
 import matplotlib
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from PIL import Image
 from keras.utils import img_to_array
@@ -41,12 +42,12 @@ from scipy.integrate import odeint
 
 from utils.ims import merge_zstack
 
-from envs.env import SimpleEnv
+# desktop = os.path.join('./', 'Desktop')
+# # PurePath subclass that can make system calls
+# root_images = Path(f"../../../WoundDataDARPA/Porcine_Exp_Davis/Wound_6_merged_downsample/")
+# image_paths = list(root_images.glob("*.jpg"))
 
-desktop = os.path.join('./', 'Desktop')
-# PurePath subclass that can make system calls
-root_images = Path(f"../../../WoundDataDARPA/Porcine_Exp_Davis/Wound_6_merged_downsample/")
-image_paths = list(root_images.glob("*.jpg"))
+from utils.tools import *
 
 # Constants
 avg_dv = np.array([108.16076384,  61.49104917,  55.44175686])
@@ -60,17 +61,18 @@ class DeepMapper(object):
     def __init__(self, deviceArgs, writer):
         super(DeepMapper, self).__init__()
 
+        self.deviceArgs = deviceArgs
+
         self.args = HealNetParameters()
         self.wound_num = deviceArgs.wound_num
 
-        self.args.model_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/deepmapper/models_wound_{}/'.format(self.wound_num)
-        self.args.data_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/deepmapper/data_wound_{}/'.format(self.wound_num)
-        self.dsmg_dir = self.args.data_dir + 'dsmgIMs/'
-        self.args.figs_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/deepmapper/figs_wound_{}/'.format(self.wound_num)
+        self.args.model_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/deepmapper/models_wound_{}/'.format(deviceArgs.expNum, self.wound_num)
+        self.args.data_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/deepmapper/data_wound_{}/'.format(deviceArgs.expNum, self.wound_num)
+        self.args.figs_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/deepmapper/figs_wound_{}/'.format(deviceArgs.expNum, self.wound_num)
 
         self.imdata_dir = self.args.data_dir + 'dsmgIMs/'
 
-        dirs = [self.args.data_dir, self.args.figs_dir, self.args.model_dir, self.dsmg_dir]
+        dirs = [self.args.data_dir, self.args.figs_dir, self.args.model_dir, self.imdata_dir]
         for dirtmp in dirs:
             if not os.path.exists(dirtmp):
                 os.makedirs(dirtmp)
@@ -79,19 +81,24 @@ class DeepMapper(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() and self.args.gpu else "cpu")
         # create models
         self.model = Autoencoder().to(self.device)
-        self.model.load_state_dict(torch.load(self.args.model_dir + '../' + 'checkpoint_ep_final.pth'))
+        # if deviceArgs.
+        if not deviceArgs.isTrain:
+            print('Finish loading DNN models...')
+            self.model.load_state_dict(torch.load(deviceArgs.desktop_dir + 'Close_Loop_Actuation/models/deepmapper_ep_final.pth'))
 
         self.criterion = nn.MSELoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=5e-4)
         self.num_epochs = 1000
-        self.ndays = 10
+        self.ndays = 8
 
-        self.xrange = np.linspace(0, self.ndays, 12 * 10)
+        # self.xrange = np.linspace(0, self.ndays, 12 * 10)
+        self.xrange = np.linspace(0, self.ndays, 77)
 
         # we assume that whent the wound is created, it has prob h one
-        self.init_prob = torch.from_numpy(np.array([1., 0., 0., 0.])).float().to(self.device)
+        self.init_prob = torch.from_numpy(np.array([1., 0., 0., 0.])).view(1, -1).float().to(self.device)
 
-    def ds_merge(self, im_dir):
+
+    def ds_merge(self, im_dir, gen_dirs=None):
         '''
         dwonsampling merging
         @im_dir: image directory where device image stored
@@ -99,7 +106,10 @@ class DeepMapper(object):
         '''
 
         im_name = im_dir.__str__().split('/')[-1]
-        im_name = self.dsmg_dir + im_name + '.png'
+        if gen_dirs is None:
+            im_name = self.imdata_dir + im_name + '.png'
+        else:
+            im_name = gen_dirs + im_name + '.png'
 
         if not os.path.exists(im_name):
             final_image, final_coeffs_R, final_coeffs_G, final_coeffs_B = merge_zstack(im_dir)
@@ -113,27 +123,49 @@ class DeepMapper(object):
         # convert a PIL Image instance to a NumPy array: shape: w x h x c
         device_image = img_to_array(Image.open(image))
         img_avg = device_image.mean(axis=(0, 1))
+        # device_image = np.clip(device_image +
+        #                        np.expand_dims(avg_dv - img_avg, axis=0) +
+        #                        np.random.uniform(0, 1, device_image.shape), 0, 255).astype(int)
         device_image = np.clip(device_image + np.expand_dims(avg_dv - img_avg, axis=0), 0, 255).astype(int)
 
         return device_image
 
-    def test(self, ep, image_dir):
+    def test(self, ep, image_dir, progressor=None):
         im_gens = []
         im_orgs = []
-
+        image_dir.sort()
+        xrange = np.linspace(0, 3, len(image_dir) + 1)
         prob_buf = np.array([1., 0., 0., 0.])
+        time_process = str2sec(str(image_dir[0])[-20:-5]) - 7200.0
+        err = 0
+        grd = 0
+
+        pgs = []
+
+        if progressor is not None:
+            pgs.append(progressor(prob_buf.reshape(1, -1))[0]/ 20.0)
+
         for idx in range(len(image_dir)):
+            # xrange.append((xrange[-1] + 1) * 2)
             curr_device_image = self.process_im(image_dir[idx])
             curr_image_data = np.expand_dims(curr_device_image.T, axis=0)
             curr_image_data = torch.from_numpy(curr_image_data / 255.0).float().to(self.device)
 
-            prob, A_prob, x_hat, x_next_hat = self.model(curr_image_data)
+            time_dif = str2sec(str(image_dir[idx])[-20:-5]) - time_process
+            time_process = str2sec(str(image_dir[idx])[-20:-5])
+
+            prob, A_prob, x_hat, x_next_hat = self.model(curr_image_data, time_dif)
+            if progressor is not None:
+                pgs.append(progressor(prob.data.numpy().reshape(1, -1))[0]/ 20.0)
             prob_buf = np.vstack((prob_buf, A_prob.cpu().data.numpy().squeeze()))
 
             x_hat_np = x_hat.data.numpy().squeeze().T
             x_hat_np = x_hat_np * 255
             im_hat = Image.fromarray(x_hat_np.astype(np.uint8))
             im_org = Image.fromarray((curr_image_data.data.numpy().squeeze().T * 255).astype(np.uint8))
+
+            err += np.sum(np.abs(x_hat_np - (curr_image_data.data.numpy().squeeze().T * 255)))
+            grd += np.sum(x_hat_np)
 
             im_gens.append(im_hat)
             im_orgs.append(im_org)
@@ -151,29 +183,64 @@ class DeepMapper(object):
                     dst1.paste(im_orgs[i + j * 7], (i * 128, 128 * j))
                     dst2.paste(im_gens[i + j * 7], (i * 128, 128 * j))
 
-        y_tmp = odeint(simple, np.array([1., 0., 0., 0.]), self.xrange,
+        xrangeAll = np.linspace(0, 20, 240)
+
+        # TODO: Fix Xrange
+        y_tmp = odeint(simple, np.array([1., 0., 0., 0.]), xrangeAll,
                        args=(np.array([F.sigmoid(self.model.Kh).data.cpu().numpy()[0],
                                        F.sigmoid(self.model.Ki).data.cpu().numpy()[0],
                                        F.sigmoid(self.model.Kp).data.cpu().numpy()[0]]),))
-        fig = plt.figure(figsize=(8, 4))
-        ax = fig.add_subplot()
-        ax.scatter(self.xrange, prob_buf[:, 0], color='r')  # , label='Hemostasis')
-        ax.scatter(self.xrange, prob_buf[:, 1], color='g')  # , label='Inflammation')
-        ax.scatter(self.xrange, prob_buf[:, 2], color='b')  # , label='Proliferation')
-        ax.scatter(self.xrange, prob_buf[:, 3], color='y')  # , label='Maturation')
 
-        ax.plot(self.xrange, y_tmp[:, 0], color='r', label='H')
-        ax.plot(self.xrange, y_tmp[:, 1], color='g', label='I')
-        ax.plot(self.xrange, y_tmp[:, 2], color='b', label='P')
-        ax.plot(self.xrange, y_tmp[:, 3], color='y', label='M')
+        if progressor is not None:
+            xrange = [hr / 12.0 for hr in range(len(prob_buf))]
+            fig = plt.figure(figsize=(8, 8))
+            ax = fig.add_subplot(211)
+            ax.step(xrange, prob_buf[:, 0], color='r', label='H')
+            ax.step(xrange, prob_buf[:, 1], color='g', label='I')
+            ax.step(xrange, prob_buf[:, 2], color='b', label='P')
+            ax.step(xrange, prob_buf[:, 3], color='y', label='M')
+            ax.legend()
 
-        leg_pos = (1, 0.5)
-        ax.legend(loc='center left', bbox_to_anchor=leg_pos)
-        ax.set_xlabel('Time (day)')
+            ax = fig.add_subplot(212)
+            ax.step(xrange, pgs, color='r', label='Prg')
+
+            leg_pos = (1, 0.5)
+            ax.legend(loc='center left', bbox_to_anchor=leg_pos)
+            ax.set_xlabel('Time (day)')
+        else:
+            fig = plt.figure(figsize=(8, 4))
+            ax = fig.add_subplot(111)
+            ax.scatter(xrange, prob_buf[:, 0], color='r')  # , label='Hemostasis')
+            ax.scatter(xrange, prob_buf[:, 1], color='g')  # , label='Inflammation')
+            ax.scatter(xrange, prob_buf[:, 2], color='b')  # , label='Proliferation')
+            ax.scatter(xrange, prob_buf[:, 3], color='y')  # , label='Maturation')
+
+            ax.plot(xrangeAll, y_tmp[:, 0], color='r', label='H')
+            ax.plot(xrangeAll, y_tmp[:, 1], color='g', label='I')
+            ax.plot(xrangeAll, y_tmp[:, 2], color='b', label='P')
+            ax.plot(xrangeAll, y_tmp[:, 3], color='y', label='M')
+
+            leg_pos = (1, 0.5)
+            ax.legend(loc='center left', bbox_to_anchor=leg_pos)
+            ax.set_xlabel('Time (day)')
+
+        plt.savefig('./data_save/exp_{}/probs_{}.pdf'.format(self.deviceArgs.expNum, self.deviceArgs.wound_num), format='pdf')
+
+        if progressor is not None:
+            df = {'H': prob_buf[:, 0],
+                  'I': prob_buf[:, 1],
+                  'P': prob_buf[:, 2],
+                  'M': prob_buf[:, 3],
+                  "progress": np.array(pgs)}
+            probdf = pd.DataFrame(df)
+        else:
+            probdf = pd.DataFrame(prob_buf)
+        probdf.to_csv('./data_save/exp_{}/probs_{}.csv'.format(self.deviceArgs.expNum, self.deviceArgs.wound_num))
 
         self.writer.add_figure('wsd_stage/prob', fig, ep)
         self.writer.add_image('wsd_stage/orgs', img_to_array(dst1) / 255.0, ep, dataformats='HWC')
         self.writer.add_image('wsd_stage/gens', img_to_array(dst2) / 255.0, ep, dataformats='HWC')
+
         plt.close()
         dst1.close()
         dst2.close()
@@ -268,8 +335,7 @@ class DeepMapper(object):
 
         return A_prob
 
-
-    def ws_est_gen(self, im_dir):
+    def ws_est_gen(self, im_dir, time_dif):
         '''
         Wound stage estimation
         @im_dir: (dir) the latest wound image directory where device image stored
@@ -285,7 +351,7 @@ class DeepMapper(object):
         device_image = np.clip(device_image + np.expand_dims(avg_dv - img_avg, axis=0), 0, 255).astype(int)
         device_image = np.expand_dims(device_image.T, axis=0)
         device_image = torch.from_numpy(device_image / 255.0).float().to(self.device)
-        probs, A_prob, x_hat, x_next_hat = self.model(device_image)
+        probs, A_prob, x_hat, x_next_hat = self.model(device_image, time_dif)
         A_prob = A_prob.cpu().data.numpy().squeeze()
 
         return A_prob, device_image.cpu().data.numpy().squeeze().T, x_hat.cpu().data.numpy().squeeze().T

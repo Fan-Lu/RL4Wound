@@ -3,6 +3,16 @@
 import torch
 
 
+def str2sec(t):
+    month_days = {1: 31, 2: 29, 3: 31, 4: 30,
+                  5: 31, 6: 30, 7: 31, 8: 31,
+                  9: 30, 10: 31, 11: 30, 12: 31}
+    ftr = [86400.0, 3600.0, 60.0]
+    year, month, day, hour, min = t.split('-')
+    total_time = sum([a * b for a, b in zip(ftr, [int(day), int(hour), int(min)])]) + month_days[int(month)] * 86400.0
+    return total_time
+
+
 class SharedAdam(torch.optim.Adam):
     """
     share adam optimizer between workers

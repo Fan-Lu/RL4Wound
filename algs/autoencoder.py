@@ -41,7 +41,8 @@ class Autoencoder(nn.Module):
 
         # sampling time
         # self.sample_time = 0.1001
-        self.sample_time = 0.85
+        self.sample_time = 0.08
+        # self.sample_time = 0.85
 
         KhMask = np.array([[-1, 0, 0, 0],
                           [1, 0, 0, 0],
@@ -106,23 +107,22 @@ class Autoencoder(nn.Module):
 
         return z
 
-    def shift(self, z):
+    def shift(self, z, time_dif):
         # self.Amat_masked = torch.clip(torch.multiply(F.relu(self.Amat), self.AMask), 0.1, 1.0)
 
         self.Amat_masked = torch.multiply(F.sigmoid(self.Kh), self.KhMask) + \
                            torch.multiply(F.sigmoid(self.Ki), self.KiMask) + \
                            torch.multiply(F.sigmoid(self.Kp), self.KpMask)
-
         Az = torch.matmul(self.Amat_masked, z.T).T
-
-        Az = z + Az * self.sample_time
+        # default sample time is 7200 seconds
+        Az = z + Az * self.sample_time * (time_dif / 7200)
 
         return Az
 
-    def forward(self, x):
+    def forward(self, x, time_dif):
         z = self.encoder(x)
         x_hat = self.decoder(z)
-        z_next = self.shift(z)
+        z_next = self.shift(z, time_dif)
         x_next_hat = self.decoder(z_next)
 
         return z, z_next, x_hat, x_next_hat

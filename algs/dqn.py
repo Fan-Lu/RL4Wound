@@ -33,7 +33,7 @@ class QNetwork(nn.Module):
         """
         super(QNetwork, self).__init__()
         fc3_units = 64
-        self.seed = torch.manual_seed(seed)
+        # self.seed = torch.manual_seed(seed)
 
         self.fc1 = nn.Linear(state_size, fc1_units)
         self.fc2 = nn.Linear(fc1_units, fc2_units)
@@ -219,7 +219,6 @@ class Agent_DDQN(object):
         self.qnet_target = QNetwork(self.state_size, self.action_size, args.seed).to(self.device)
         # Local Qnet
         self.model = QNetwork(self.state_size, self.action_size, args.seed).to(self.device)
-
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.LR)
 
         # Replay memory
@@ -229,7 +228,7 @@ class Agent_DDQN(object):
         self.t_step = 0
         self.upCnt = 0
 
-        self.model_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/deepRL/models_wound_{}/'.format(deviceArgs.wound_num)
+        self.model_dir = deviceArgs.desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/deepRL/models_wound_{}/'.format(deviceArgs.expNum, deviceArgs.wound_num)
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
 
