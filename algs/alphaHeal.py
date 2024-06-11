@@ -71,7 +71,7 @@ class OpCSVProb(object):
 
         # Get previous prob time
         if len(self.prob_table['Time Processed']) > 0:
-            self.prev_prob_time = self.prob_table['Time Processed'].iat[-1]
+            self.prev_prob_time = str2sec(self.prob_table.Image.iloc[-1])
         else:
             self.prev_prob_time = None
 
