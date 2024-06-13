@@ -233,9 +233,9 @@ def train():
 
             torch.save(mapper.model.state_dict(), mapper.args.model_dir + 'checkpoint_ep_{}.pth'.format(ep))
             mapper.writer.add_scalar('Loss/train_mse', avg_loss, ep)
-            mapper.writer.add_scalar('Ks/k_h', F.sigmoid(mapper.model.Kh).data.cpu().numpy()[0], ep)
-            mapper.writer.add_scalar('Ks/k_i', F.sigmoid(mapper.model.Ki).data.cpu().numpy()[0], ep)
-            mapper.writer.add_scalar('Ks/k_p', F.sigmoid(mapper.model.Kp).data.cpu().numpy()[0], ep)
+            mapper.writer.add_scalar('Ks/k_h', mapper.model.Kh, ep)
+            mapper.writer.add_scalar('Ks/k_i', mapper.model.Ki, ep)
+            mapper.writer.add_scalar('Ks/k_p', mapper.model.Kp, ep)
 
 
 def ds_merge(im_dir, imdata_dir):
@@ -321,6 +321,6 @@ def MergeImsMultiP():
         p.join()
 
 if __name__ == "__main__":
-    # train()
-    test(wnum=3, expNum=14)
+    train()
+    # test(wnum=3, expNum=14)
     # im_gen()

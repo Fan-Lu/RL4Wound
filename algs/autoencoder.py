@@ -31,6 +31,9 @@ class Autoencoder(nn.Module):
         self.dec_fc2 = nn.Linear(128, 4 * 32 * 32)
         # self.dec_fc3 = nn.Linear(128, 4 * 32 * 32)
 
+        self.A_fc1 = nn.Linear(h_dim, 32)
+        self.A_fc2 = nn.Linear(32, 3)
+
         ## decoder layers ##
         ## a kernel of 2 and a stride of 2 will increase the spatial dims by 2
         # self.t_conv1 = nn.ConvTranspose2d(1, 4, 2, stride=2)
@@ -42,37 +45,18 @@ class Autoencoder(nn.Module):
         # sampling time
         # self.sample_time = 0.1001
         self.sample_time = 0.08
-        # self.sample_time = 0.85
 
-        KhMask = np.array([[-1, 0, 0, 0],
-                          [1, 0, 0, 0],
-                          [0, 0, 0, 0],
-                          [0, 0, 0, 0]])
+        self.Kh = 0.5
+        self.Ki = 0.3
+        self.Kp = 0.1
 
-        KiMask = np.array([[0, 0, 0, 0],
-                          [0, -1, 0, 0],
-                          [0, 1, 0, 0],
-                          [0, 0, 0, 0]])
-
-        KpMask = np.array([[0, 0, 0, 0],
-                          [0, 0, 0, 0],
-                          [0, 0, -1, 0],
-                          [0, 0, 1, 0]])
-
-        self.KhMask = torch.from_numpy(KhMask).float()
-        self.KiMask = torch.from_numpy(KiMask).float()
-        self.KpMask = torch.from_numpy(KpMask).float()
-
-        # self.Amat = nn.Parameter(torch.from_numpy(AInit).float(), requires_grad=True)
-
-        self.Kh = nn.Parameter(torch.from_numpy(np.array([0.5])).float(), requires_grad=True)
-        self.Ki = nn.Parameter(torch.from_numpy(np.array([0.3])).float(), requires_grad=True)
-        self.Kp = nn.Parameter(torch.from_numpy(np.array([0.1])).float(), requires_grad=True)
-
-        # self.Amat_masked = torch.multiply(F.relu(self.Amat), self.AMask)
-        self.Amat_masked = torch.multiply(self.Kh, self.KhMask) + \
-                           torch.multiply(self.Ki, self.KiMask) + \
-                           torch.multiply(self.Kp, self.KpMask)
+        self.Amat_masked = torch.zeros((3, 4, 4))
+        self.Amat_masked[0][0][0] = -1
+        self.Amat_masked[0][1][0] =  1
+        self.Amat_masked[1][1][1] = -1
+        self.Amat_masked[1][2][1] =  1
+        self.Amat_masked[2][2][2] = -1
+        self.Amat_masked[2][3][2] =  1
 
         self.softmax = nn.Softmax(dim=1)
 
@@ -109,11 +93,13 @@ class Autoencoder(nn.Module):
 
     def shift(self, z, time_dif):
         # self.Amat_masked = torch.clip(torch.multiply(F.relu(self.Amat), self.AMask), 0.1, 1.0)
+        ks = F.relu(self.A_fc1(z))
+        ks = F.sigmoid(self.A_fc2(ks))
 
-        self.Amat_masked = torch.multiply(F.sigmoid(self.Kh), self.KhMask) + \
-                           torch.multiply(F.sigmoid(self.Ki), self.KiMask) + \
-                           torch.multiply(F.sigmoid(self.Kp), self.KpMask)
-        Az = torch.matmul(self.Amat_masked, z.T).T
+        self.Kh, self.Kp, self.Ki = ks.cpu().data.squeeze().numpy()
+
+        Amat = torch.tensordot(ks.reshape(1, 1, -1), self.Amat_masked, dims=[[2], [0]]).squeeze()
+        Az = torch.matmul(Amat, z.T).T
         # default sample time is 7200 seconds
         Az = z + Az * self.sample_time * (time_dif / 7200)
 

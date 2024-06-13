@@ -187,9 +187,7 @@ class DeepMapper(object):
 
         # TODO: Fix Xrange
         y_tmp = odeint(simple, np.array([1., 0., 0., 0.]), xrangeAll,
-                       args=(np.array([F.sigmoid(self.model.Kh).data.cpu().numpy()[0],
-                                       F.sigmoid(self.model.Ki).data.cpu().numpy()[0],
-                                       F.sigmoid(self.model.Kp).data.cpu().numpy()[0]]),))
+                       args=(np.array([self.model.Kh, self.model.Kh, self.model.Kh])))
 
         if progressor is not None:
             xrange = [hr / 12.0 for hr in range(len(prob_buf))]
