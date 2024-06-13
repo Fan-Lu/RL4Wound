@@ -134,16 +134,12 @@ class DeepMapper(object):
         im_gens = []
         im_orgs = []
         image_dir.sort()
-        xrange = np.linspace(0, 3, len(image_dir) + 1)
         prob_buf = np.array([1., 0., 0., 0.])
         time_process = str2sec(str(image_dir[0])[-20:-5]) - 7200.0
         err = 0
         grd = 0
 
-        pgs = []
-
-        if progressor is not None:
-            pgs.append(progressor(prob_buf.reshape(1, -1))[0]/ 20.0)
+        stages = ['H', 'I', 'P', 'M']
 
         for idx in range(len(image_dir)):
             # xrange.append((xrange[-1] + 1) * 2)
@@ -160,8 +156,10 @@ class DeepMapper(object):
             self.writer.add_scalar('Ks_test/k_i', self.model.Ki, idx)
             self.writer.add_scalar('Ks_test/k_p', self.model.Kp, idx)
 
-            if progressor is not None:
-                pgs.append(progressor(prob.data.numpy().reshape(1, -1))[0]/ 20.0)
+            self.writer.add_scalars('/stages_test/',
+                                    {'{}'.format(stages[jdx]): A_prob.cpu().data.numpy().squeeze()[jdx]
+                                     for jdx in range(4)}, idx)
+
             prob_buf = np.vstack((prob_buf, A_prob.cpu().data.numpy().squeeze()))
 
             x_hat_np = x_hat.data.numpy().squeeze().T
@@ -188,57 +186,19 @@ class DeepMapper(object):
                     dst1.paste(im_orgs[i + j * 7], (i * 128, 128 * j))
                     dst2.paste(im_gens[i + j * 7], (i * 128, 128 * j))
 
-        xrangeAll = np.linspace(0, 20, 240)
+        # if progressor is not None:
+        xrange = [hr / 12.0 for hr in range(len(prob_buf))]
+        fig = plt.figure(figsize=(8, 4))
+        ax = fig.add_subplot(111)
+        ax.step(xrange, prob_buf[:, 0], color='r', label='H')
+        ax.step(xrange, prob_buf[:, 1], color='g', label='I')
+        ax.step(xrange, prob_buf[:, 2], color='b', label='P')
+        ax.step(xrange, prob_buf[:, 3], color='y', label='M')
+        ax.legend()
+        ax.set_xlabel('Time (day)')
 
-        # TODO: Fix Xrange
-        y_tmp = odeint(simple, np.array([1., 0., 0., 0.]), xrangeAll,
-                       args=(np.array([self.model.Kh, self.model.Kh, self.model.Kh])))
-
-        if progressor is not None:
-            xrange = [hr / 12.0 for hr in range(len(prob_buf))]
-            fig = plt.figure(figsize=(8, 8))
-            ax = fig.add_subplot(211)
-            ax.step(xrange, prob_buf[:, 0], color='r', label='H')
-            ax.step(xrange, prob_buf[:, 1], color='g', label='I')
-            ax.step(xrange, prob_buf[:, 2], color='b', label='P')
-            ax.step(xrange, prob_buf[:, 3], color='y', label='M')
-            ax.legend()
-
-            ax = fig.add_subplot(212)
-            ax.step(xrange, pgs, color='r', label='Prg')
-
-            leg_pos = (1, 0.5)
-            ax.legend(loc='center left', bbox_to_anchor=leg_pos)
-            ax.set_xlabel('Time (day)')
-        else:
-            fig = plt.figure(figsize=(8, 4))
-            ax = fig.add_subplot(111)
-            ax.scatter(xrange, prob_buf[:, 0], color='r')  # , label='Hemostasis')
-            ax.scatter(xrange, prob_buf[:, 1], color='g')  # , label='Inflammation')
-            ax.scatter(xrange, prob_buf[:, 2], color='b')  # , label='Proliferation')
-            ax.scatter(xrange, prob_buf[:, 3], color='y')  # , label='Maturation')
-
-            ax.plot(xrangeAll, y_tmp[:, 0], color='r', label='H')
-            ax.plot(xrangeAll, y_tmp[:, 1], color='g', label='I')
-            ax.plot(xrangeAll, y_tmp[:, 2], color='b', label='P')
-            ax.plot(xrangeAll, y_tmp[:, 3], color='y', label='M')
-
-            leg_pos = (1, 0.5)
-            ax.legend(loc='center left', bbox_to_anchor=leg_pos)
-            ax.set_xlabel('Time (day)')
-
-        plt.savefig('./data_save/exp_{}/probs_{}.pdf'.format(self.deviceArgs.expNum, self.deviceArgs.wound_num), format='pdf')
-
-        if progressor is not None:
-            df = {'H': prob_buf[:, 0],
-                  'I': prob_buf[:, 1],
-                  'P': prob_buf[:, 2],
-                  'M': prob_buf[:, 3],
-                  "progress": np.array(pgs)}
-            probdf = pd.DataFrame(df)
-        else:
-            probdf = pd.DataFrame(prob_buf)
-        probdf.to_csv('./data_save/exp_{}/probs_{}.csv'.format(self.deviceArgs.expNum, self.deviceArgs.wound_num))
+        probdf = pd.DataFrame(prob_buf)
+        probdf.to_csv('./data_save/exp_{}/probs_wound_{}_ep_{}.csv'.format(self.deviceArgs.expNum, self.deviceArgs.wound_num, ep))
 
         self.writer.add_figure('wsd_stage/prob', fig, ep)
         self.writer.add_image('wsd_stage/orgs', img_to_array(dst1) / 255.0, ep, dataformats='HWC')
@@ -247,75 +207,6 @@ class DeepMapper(object):
         plt.close()
         dst1.close()
         dst2.close()
-
-    def train(self):
-        look_ahead_cnt = 4
-        # image_paths = [os.listdir(self.imdata_dir)]
-        root_images = Path(self.imdata_dir)
-        image_paths = list(root_images.glob("*.png"))
-
-        for ep in range(self.num_epochs):
-            avg_loss = 0.0
-            cnt = 0
-            for idx in tqdm(range(len(image_paths)), position=0, leave=True):
-
-                if idx < len(image_paths) - look_ahead_cnt:
-                    curr_device_image = self.process_im(image_paths[idx])
-                    next_device_image = self.process_im(image_paths[idx + 1])
-                    next4_device_image = self.process_im(image_paths[idx + look_ahead_cnt])
-
-                    curr_image_data = np.expand_dims(curr_device_image.T, axis=0)
-                    curr_image_data = torch.from_numpy(curr_image_data / 255.0).float().to(self.device)
-
-                    next_image_data = np.expand_dims(next_device_image.T, axis=0)
-                    next_image_data = torch.from_numpy(next_image_data / 255.0).float().to(self.device)
-
-                    next4_image_data = np.expand_dims(next4_device_image.T, axis=0)
-                    next4_image_data = torch.from_numpy(next4_image_data / 255.0).float().to(self.device)
-
-                    prob, A_prob, x_hat, x_next_hat = self.model(curr_image_data)
-                    prob_next, _, _, _ = self.model(next_image_data)
-                    prob_next4, _, _, _ = self.model(next4_image_data)
-                    self.optimizer.zero_grad()
-
-                    A_prob_shift = self.model.shift(A_prob)
-                    for xxx in range(look_ahead_cnt - 1):
-                        A_prob_shift = self.model.shift(A_prob_shift)
-
-                    if idx <= 0:
-                        loss = 0.2 * self.criterion(x_hat, curr_image_data) + \
-                               0.2 * self.criterion(x_next_hat, next_image_data) + \
-                               0.4 * self.criterion(prob, self.init_prob) + \
-                               0.05 * self.criterion(A_prob, prob_next.detach()) + \
-                               0.05 * self.criterion(prob_next, A_prob.detach()) + \
-                               0.1 * self.criterion(A_prob_shift, prob_next4)
-                    else:
-                        loss = 0.2 * self.criterion(x_hat, curr_image_data) + \
-                               0.2 * self.criterion(x_next_hat, next_image_data) + \
-                               0.15 * self.criterion(A_prob, prob_next.detach()) + \
-                               0.15 * self.criterion(prob_next, A_prob.detach()) + \
-                               0.3 * self.criterion(A_prob_shift, prob_next4)
-
-                    loss.backward()
-                    self.optimizer.step()
-
-                    avg_loss += loss.cpu().item()
-                    cnt += 1
-
-                else:
-                    break
-
-            if ep % 1 == 0:
-                print('Train Epoch [{}/{}] Loss:{:.4f}'.format(ep + 1, self.num_epochs, avg_loss / cnt))
-
-                if ep % 10 == 0:
-                    self.test(ep, image_paths)
-
-                torch.save(self.model.state_dict(), self.args.model_dir + 'checkpoint_ep_{}.pth'.format(ep))
-                self.writer.add_scalar('Loss/train_mse', avg_loss / cnt, ep)
-                self.writer.add_scalar('Ks/k_h', F.sigmoid(self.model.Kh).data.cpu().numpy()[0], ep)
-                self.writer.add_scalar('Ks/k_i', F.sigmoid(self.model.Ki).data.cpu().numpy()[0], ep)
-                self.writer.add_scalar('Ks/k_p', F.sigmoid(self.model.Kp).data.cpu().numpy()[0], ep)
 
     def ws_est(self, im_dir):
         '''
