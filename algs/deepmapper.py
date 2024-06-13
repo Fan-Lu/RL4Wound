@@ -155,6 +155,11 @@ class DeepMapper(object):
             time_process = str2sec(str(image_dir[idx])[-20:-5])
 
             prob, A_prob, x_hat, x_next_hat = self.model(curr_image_data, time_dif)
+
+            self.writer.add_scalar('Ks_test/k_h', self.model.Kh, idx)
+            self.writer.add_scalar('Ks_test/k_i', self.model.Ki, idx)
+            self.writer.add_scalar('Ks_test/k_p', self.model.Kp, idx)
+
             if progressor is not None:
                 pgs.append(progressor(prob.data.numpy().reshape(1, -1))[0]/ 20.0)
             prob_buf = np.vstack((prob_buf, A_prob.cpu().data.numpy().squeeze()))
