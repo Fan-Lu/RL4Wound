@@ -87,7 +87,7 @@ class DeepMapper(object):
             self.model.load_state_dict(torch.load(deviceArgs.desktop_dir + 'Close_Loop_Actuation/models/deepmapper_ep_final.pth'))
 
         self.criterion = nn.MSELoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=5e-4)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.num_epochs = 1000
         self.ndays = 8
 
@@ -138,8 +138,7 @@ class DeepMapper(object):
         time_process = str2sec(str(image_dir[0])[-20:-5]) - 7200.0
         err = 0
         grd = 0
-
-        stages = ['H', 'I', 'P', 'M']
+        allks = []
 
         for idx in range(len(image_dir)):
             # xrange.append((xrange[-1] + 1) * 2)
@@ -151,14 +150,7 @@ class DeepMapper(object):
             time_process = str2sec(str(image_dir[idx])[-20:-5])
 
             prob, A_prob, x_hat, x_next_hat = self.model(curr_image_data, time_dif)
-
-            self.writer.add_scalar('Ks_test/k_h', self.model.Kh, idx)
-            self.writer.add_scalar('Ks_test/k_i', self.model.Ki, idx)
-            self.writer.add_scalar('Ks_test/k_p', self.model.Kp, idx)
-
-            self.writer.add_scalars('/stages_test/',
-                                    {'{}'.format(stages[jdx]): A_prob.cpu().data.numpy().squeeze()[jdx]
-                                     for jdx in range(4)}, idx)
+            allks.append([self.model.Kh, self.model.Ki, self.model.Kp])
 
             prob_buf = np.vstack((prob_buf, A_prob.cpu().data.numpy().squeeze()))
 
@@ -172,6 +164,7 @@ class DeepMapper(object):
 
             im_gens.append(im_hat)
             im_orgs.append(im_org)
+        allks = np.array(allks).reshape(-1, 3)
 
         numIms = len(im_orgs)
         numRows = numIms // 7
@@ -188,21 +181,40 @@ class DeepMapper(object):
 
         # if progressor is not None:
         xrange = [hr / 12.0 for hr in range(len(prob_buf))]
-        fig = plt.figure(figsize=(8, 4))
-        ax = fig.add_subplot(111)
-        ax.step(xrange, prob_buf[:, 0], color='r', label='H')
-        ax.step(xrange, prob_buf[:, 1], color='g', label='I')
-        ax.step(xrange, prob_buf[:, 2], color='b', label='P')
-        ax.step(xrange, prob_buf[:, 3], color='y', label='M')
-        ax.legend()
+        fig = plt.figure(figsize=(8, 8))
+        ax = fig.add_subplot(211)
+        ax.step(xrange[1:], prob_buf[1:, 0], color='r', label='H')
+        ax.step(xrange[1:], prob_buf[1:, 1], color='g', label='I')
+        ax.step(xrange[1:], prob_buf[1:, 2], color='b', label='P')
+        ax.step(xrange[1:], prob_buf[1:, 3], color='y', label='M')
+        leg_pos = (1, 0.5)
+        ax.legend(loc='center left', bbox_to_anchor=leg_pos)
         ax.set_xlabel('Time (day)')
+        plt.tight_layout()
+
+        ax = fig.add_subplot(212)
+        ax.step(xrange[1:], allks[:, 0], color='r', label='kh')
+        ax.step(xrange[1:], allks[:, 1], color='g', label='ki')
+        ax.step(xrange[1:], allks[:, 2], color='b', label='kp')
+        ax.legend(loc='center left', bbox_to_anchor=leg_pos)
+        ax.set_xlabel('Time (day)')
+        plt.tight_layout()
 
         probdf = pd.DataFrame(prob_buf)
-        probdf.to_csv('./data_save/exp_{}/probs_wound_{}_ep_{}.csv'.format(self.deviceArgs.expNum, self.deviceArgs.wound_num, ep))
+        probdf.to_csv('./data_save/exp_{}/deepmapper/data_wound_{}/probs_wound_{}_ep_{}.csv'.format(
+            self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
 
-        self.writer.add_figure('wsd_stage/prob', fig, ep)
-        self.writer.add_image('wsd_stage/orgs', img_to_array(dst1) / 255.0, ep, dataformats='HWC')
-        self.writer.add_image('wsd_stage/gens', img_to_array(dst2) / 255.0, ep, dataformats='HWC')
+        allkdf = pd.DataFrame(allks)
+        allkdf.to_csv('./data_save/exp_{}/deepmapper/data_wound_{}/allks_wound_{}_ep_{}.csv'.format(
+            self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
+
+        if self.writer is not None:
+            self.writer.add_figure('wsd_stage/prob', fig, ep)
+            self.writer.add_image('wsd_stage/im_orgs', img_to_array(dst1) / 255.0, ep, dataformats='HWC')
+            self.writer.add_image('wsd_stage/im_gens', img_to_array(dst2) / 255.0, ep, dataformats='HWC')
+        else:
+            plt.savefig('./data_save/exp_{}/deepmapper/data_wound_{}/stages_wound_{}_ep_{}.png'.format(
+            self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
 
         plt.close()
         dst1.close()

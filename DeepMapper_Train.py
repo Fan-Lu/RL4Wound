@@ -42,7 +42,7 @@ def merge_one_process(dir_exp_cam_date, gen_dir, dir_exp, dir_cam):
 
 def im_gen():
     main_dir = 'E:/Data/Porcine_Exp_Davis/'
-    gen_dir = 'E:/Data/Porcine_Exp_Davis_Processed/'
+    gen_dir = 'E:/Data/Porcine_Exp_Davis_Processed_All/'
 
     for dir_exp in os.listdir(main_dir):
         dir_exp_cam = main_dir + dir_exp + '/'
@@ -206,7 +206,7 @@ def train():
                                0.3 * mapper.criterion(A_prob_shift, prob_next4)
                     else:
                         A_prob_shift_end = A_prob_shift
-                        for xxx in range(180):
+                        for xxx in range(90 - idx):
                             A_prob_shift_end = mapper.model.shift(A_prob_shift_end, 7200)
 
                         loss = 0.2 * mapper.criterion(x_hat, curr_image_data) + \
@@ -215,14 +215,14 @@ def train():
                                0.15 * mapper.criterion(prob_next, A_prob.detach()) + \
                                0.15 * mapper.criterion(A_prob_shift, prob_next4) + \
                                0.15 * mapper.criterion(A_prob_shift_end, final_prob_ref)
-
                     loss.backward()
                     mapper.optimizer.step()
+                    mapper.optimizer.zero_grad()
 
                     avg_loss += loss.cpu().item()
                     cnt += 1
 
-        if (ep + 1) % 50 == 0:
+        if (ep + 1) % 20 == 0:
             print('Train Epoch [{}/{}] Loss:{:.4f}'.format(ep + 1, mapper.num_epochs, avg_loss))
 
             dir_exp_cam_date = 'E:/Data/Porcine_Exp_Davis_Processed/exp_14/Camera_B/'
@@ -256,7 +256,7 @@ def ds_merge(im_dir, imdata_dir):
     return im_name
 
 
-def test(wnum, expNum):
+def test(wnum, expNum, ep):
 
     desktop_dir = os.path.expanduser("~/Desktop/")
     deviceArgs = DeviceParameters(wnum, desktop_dir)
@@ -271,21 +271,17 @@ def test(wnum, expNum):
     runs_device = '_'.join(('_'.join(time.asctime().split(' '))).split(':')) + 'wound_{}'.format(deviceArgs.wound_num)
     runs_device = alg_dir + 'runs/deepmapper/{}'.format(runs_device)
     deviceArgs.runs_device = runs_device
-    dirs = [alg_out, alg_res, runs_device]
 
-
-    wound = AlphaHeal(deviceArgs=deviceArgs)
-
-    # writer = SummaryWriter(log_dir=deviceArgs.runs_device)
-    # mapper = DeepMapper(deviceArgs=deviceArgs, writer=writer)
-    #
-    # mapper.model.load_state_dict(torch.load(desktop_dir + 'Close_Loop_Actuation/models/deepmapper_ep_final.pth'))
+    deviceArgs.isTrain = True
+    mapper = DeepMapper(deviceArgs=deviceArgs, writer=None)
+    mapper.model.load_state_dict(torch.load(
+        desktop_dir + 'Close_Loop_Actuation/data_save/exp_99/deepmapper/models_wound_9/checkpoint_ep_{}.pth'.format(ep)))
 
     dir_exp_cam_date = desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/deepmapper/data_wound_{}/dsmgIMS/'.format(expNum, wnum)
     root_images = Path(dir_exp_cam_date)
     image_paths = list(root_images.glob("*.png"))
 
-    wound.mapper.test(0, image_paths, wound.progressor.predict)
+    mapper.test(0, image_paths)
 
 
 def MergeImsSignleP(wnum):
@@ -322,5 +318,5 @@ def MergeImsMultiP():
 
 if __name__ == "__main__":
     train()
-    # test(wnum=3, expNum=14)
+    # test(wnum=6, expNum=20, ep=219)
     # im_gen()

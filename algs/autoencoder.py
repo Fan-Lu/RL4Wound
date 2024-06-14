@@ -29,10 +29,11 @@ class Autoencoder(nn.Module):
 
         self.dec_fc1 = nn.Linear(h_dim, 128)
         self.dec_fc2 = nn.Linear(128, 4 * 32 * 32)
-        # self.dec_fc3 = nn.Linear(128, 4 * 32 * 32)
 
         self.A_fc1 = nn.Linear(h_dim, 32)
-        self.A_fc2 = nn.Linear(32, 3)
+        self.A_fc2 = nn.Linear(32, 64)
+        self.A_fc3 = nn.Linear(64, 32)
+        self.A_fc4 = nn.Linear(32, 3)
 
         ## decoder layers ##
         ## a kernel of 2 and a stride of 2 will increase the spatial dims by 2
@@ -44,7 +45,7 @@ class Autoencoder(nn.Module):
 
         # sampling time
         # self.sample_time = 0.1001
-        self.sample_time = 0.08
+        self.sample_time = 0.2
 
         self.Kh = 0.5
         self.Ki = 0.3
@@ -59,6 +60,9 @@ class Autoencoder(nn.Module):
         self.Amat_masked[2][3][2] =  1
 
         self.softmax = nn.Softmax(dim=1)
+
+        self.mina = torch.from_numpy(np.array([0.2, 0.1, 0.1]))
+        self.maxa = torch.from_numpy(np.array([0.8, 0.8, 0.8]))
 
     def encoder(self, x):
         ## encode ##
@@ -92,9 +96,11 @@ class Autoencoder(nn.Module):
         return z
 
     def shift(self, z, time_dif):
-        # self.Amat_masked = torch.clip(torch.multiply(F.relu(self.Amat), self.AMask), 0.1, 1.0)
         ks = F.relu(self.A_fc1(z))
-        ks = F.sigmoid(self.A_fc2(ks))
+        ks = F.relu(self.A_fc2(ks))
+        ks = F.relu(self.A_fc3(ks))
+        ks = F.sigmoid(self.A_fc4(ks))
+        # ks = torch.clip(ks, self.mina, self.maxa).float()
 
         self.Kh, self.Kp, self.Ki = ks.cpu().data.squeeze().numpy()
 
