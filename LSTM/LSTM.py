@@ -32,7 +32,7 @@ y0 = [0.9, 0.1, 0.0, 0.0]  # Initial values for y1, y2, y3, y4
 t_span = (0, 40)
 t_eval = np.linspace(0, 40, 100)
 
-# Parameters chosen by the aunt ever
+# Parameters chosen by the best aunt ever
 params = [0.2, 0.7, 0.3]
 
 def generate_data(num_samples, t_span, t_eval, initial_conditions):
