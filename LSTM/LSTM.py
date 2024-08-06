@@ -14,7 +14,6 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 
-
 # Define the ODE system
 def ode_system(t, y, params):
     H, I, P, M = y
@@ -101,27 +100,45 @@ num_epochs = 50
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
+train_losses = []
+val_losses = []
+
 for epoch in range(num_epochs):
     model.train()
+    running_train_loss = 0.0
+    
     for inputs, targets in train_loader:
-        input, targets = inputs.to(device), targets.to(device)
+        inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
+        running_train_loss += loss.item()
+    
+    train_losses.append(running_train_loss / len(train_loader))
+    
+    model.eval()
+    running_val_loss = 0.0
+    with torch.no_grad():
+        for inputs, targets in val_loader:
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            running_val_loss += loss.item()
+    
+    val_losses.append(running_val_loss / len(val_loader))
+    
+    print(f'Epoch {epoch + 1}/{num_epochs}, Training Loss: {train_losses[-1]:.4f}, Validation Loss: {val_losses[-1]:.4f}')
 
-        model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for inputs, targets in val_loader:
-                input, targets = inputs.to(device), targets.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                val_loss += loss.item()
-        
-        val_loss /= len(val_loader)
-        print(f'Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss:.4f}')
+plt.figure(figsize=(10, 5))
+plt.plot(range(num_epochs), train_losses, label='Training Loss')
+plt.plot(range(num_epochs), val_losses, label='Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('Training and Validation Losses over Epochs')
+plt.legend()
+plt.show()
 
 num_test_samples = 200
 test_data, test_labels = generate_data(num_test_samples, t_span, t_eval, initial_conditions)
