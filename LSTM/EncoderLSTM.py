@@ -59,27 +59,54 @@ class LSTMEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(LSTMEncoder, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
-        self.hidden_to_latent = nn.Linear(hidden_dim, latent_dim)
+
+        # TODO: Fan: Why adding a Linear Layer here?
+        # self.hidden_to_latent = nn.Linear(hidden_dim, latent_dim)
+
+        # Seb: I thought that it made sense to convert the data to latent
+        # space using a linear layer since it would make it simpler. 
+        # Now I realize that LSTM layers keep the complexity, so I 
+        # will use it instead.
+
+        # TODO: Fan: Instead of using a linear layer, add a second LSTM layer. Seb: ✓
+        self.lstm2 = nn.LSTM(hidden_dim, latent_dim, batch_first = True)
 
     def forward(self, x):
-        _, (h, _) = self.lstm(x)
-        latent = self.hidden_to_latent(h[-1])
-        return latent
+        # TODO: Fan: x is of size (batch_size, sequen_len, feature_dim)
+        batch_size, sequen_len, feature_dim = x.shape
+        x1, (_, _) = self.lstm(x)
+        # latent = self.hidden_to_latent(h[-1])
+        x2, (h, _) = self.lstm2(x1)
+        # TODO: Fan: h is of size (D * num_layers, batch_size, latent_dim), but why returning hidden state
+
+        # Seb: I thought that the latent space is what would be needed to be passed for
+        # the decoder. So that is why I returned the hidden state, I got confused and thought
+        # it was the latent space. 
+        return x2
 
 class LSTMDecoder(nn.Module):
     def __init__(self, latent_dim, hidden_dim, output_dim):
         super(LSTMDecoder, self).__init__()
-        self.latent_to_hidden = nn.Linear(latent_dim, hidden_dim)
-        self.lstm = nn.LSTM(hidden_dim, output_dim, batch_first=True)
+        # TODO: Fan: Instead of using a linear layer, add a second LSTM layer
+        self.lstm = nn.LSTM(latent_dim, hidden_dim, batch_first=True)
+        # self.latent_to_hidden = nn.Linear(latent_dim, hidden_dim)
+        self.lstm2 = nn.LSTM(hidden_dim, output_dim, batch_first=True)
 
-    def forward(self, x, latent):
-        print(f"Decoder input x shape: {x.shape}")
-        print(f"Latent shape: {latent.shape}")
-        h = self.latent_to_hidden(latent).unsqueeze(0).repeat( 1, x.size(0), 1)
-        print(f"Hidden state shape: {h.shape}")
-        c = torch.zeros_like(h)
-        decoded, _ = self.lstm(x, (h,c))
-        return decoded
+    def forward(self, latent):
+        # print(f"Decoder input x shape: {x.shape}")
+        # print(f"Latent shape: {latent.shape}")
+        # h = self.latent_to_hidden(latent).unsqueeze(0).repeat( 1, x.size(0), 1)
+        # print(f"Hidden state shape: {h.shape}")
+        # TODO: Fan Lu: why make cell state all zero?
+        # c = torch.zeros_like(h)
+        # decoded, _ = self.lstm(x, (h,c))
+
+        # TODO: Fan: latent is of size (batch_size, sequen_len, latent_dim)
+
+        decoded1, (_, _) = self.lstm(latent)
+        decoded2, (_, _) = self.lstm2(decoded1)
+
+        return decoded2
     
 class LSTMParameterPredictor(nn.Module):
     def __init__(self, latent_dim, output_dim):
@@ -98,7 +125,9 @@ class LSTMAutoencoder(nn.Module):
 
     def forward(self, x):
         latent = self.encoder(x)
-        reconstructed = self.decoder(x, latent)
+        # TODO: Fan: usually, the decoder will take in only the latent space. I'm not sure why you have two inputs for the decoder
+        # reconstructed = self.decoder(x, latent)
+        reconstructed = self.decoder(latent)
         params_pred = self.param_predictor(latent)
         return reconstructed, params_pred
     
@@ -122,7 +151,8 @@ print(f"data_tensor shape: {data_tensor.shape}")
 print(f"params_tensor shape: {params_tensor.shape}")
 
 
-batch_size = 32
+# TODO: Fan: change batch size to 1
+batch_size = 1
 dataset = TensorDataset(data_tensor, params_tensor)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
@@ -137,11 +167,7 @@ for epoch in range(num_epochs):
     epoch_loss_params = 0
     for batch_data, batch_params in dataloader:
         optimizer.zero_grad()
-        print(f"Batch data shape: {batch_data.shape}")
-        print(f"Batch params shape: {batch_params.shape}")
         reconstructed, params_pred = model(batch_data)
-        print(f"Reconstructed shape: {reconstructed.shape}")
-        print(f"Params predicted shape: {params_pred.shape}")
 
         loss_recon = criterion_recon(reconstructed, batch_data)
         loss_params = criterion_params(params_pred, batch_params)
@@ -188,18 +214,34 @@ with torch.no_grad():
 params_pred = torch.cat(params_pred).cpu().numpy()
 params_true = torch.cat(params_true).cpu().numpy()
 
+print(params_pred.shape)
+print(params_true.shape)
+
+print(params_pred)
+
+print("refined parameters predicted")
+params_pred = params_pred[:, -1, :]
+print(params_pred)
+
+print("True parameters")
+print(params_true)
+
 mae = mean_absolute_error(params_true, params_pred)
 rmse = mean_squared_error(params_true, params_pred, squared = False)
 
 print(f"Mean Absolute Error (MAE): {mae:.4f}")
 print(f"Root Mean Squared Error (RMSE): {rmse:.4f}")
 
+colors = ['r', 'g', 'b']  # Colors for each parameter
+
 for i in range(param_dim):
     plt.subplot(2, 2, i+1)
-    plt.scatter(params_true[:, i], params_pred[:, i], alpha=0.5)
+    plt.scatter(params_true[:, i], params_pred[:, i], alpha=0.5, c=colors[i], label=f'Parameter {i+1}')
     plt.xlabel('True Parameter')
     plt.ylabel('Predicted Parameter')
     plt.title(f'Parameter {i+1}')
+    plt.legend()
 
 plt.tight_layout()
 plt.show()
+
