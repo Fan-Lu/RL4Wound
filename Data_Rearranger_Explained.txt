@@ -1,0 +1,65 @@
+# This Document explains how data_rearranger.py works
+
+## Requirements
+
+Libaries used for this file are as following:
+
+Pandas, numpy, PIL, matplotlib, os, and random.
+
+Data is gathered from the data directory. 
+
+Specifically data/MouseData and then each day. For train and validation we have days from 0 - 15.
+To make things simpler I just made it so that we can pull from which ever day we wish too. For example, 
+if you want to only pull images from day 0 to represent hemostasis, then you can make the script only 
+pull images from day 0. 
+
+If you wish to use other datasets, be sure to be aware of how the data is stored and how it is being accessed.
+This script utilizes the os library to manipulate and pull images. 
+
+## Code
+
+The code is broken into seperate functions that handle different portions of the process. 
+
+First you have to estabilish the groupings for each stage. So for example for each stage HIPM,
+(hemostasis, inflammation, proliferation, and maturation) you have to manually set which days 
+correspond to which stage. So in the beginning I set hemostasis to 0 and 1. I just randomly picked these 
+values, I could not find the actual labels for each image. Once you have each grouping set up in the dictionary,
+then you can start to pull the images out of each subdirectory.
+
+Next you have to keep the proper order of images you wish to have, to default I have it set to the original
+HIPM order. Then below that you want to place in the array of size 4 how many images you want for each stage.
+I tried to recreate a lasting infection, so I kept 2 images from hemostasis, and the rest to be 14 images from 
+inflammation. 
+
+It will look like this:
+
+:---:
+
+groupings = {
+    'hemostasis': ['0', '1'],
+    'inflammation': ['2', '3',],
+    'proliferation': ['4', '5', '6', '7' , '8', '9'],
+    'maturation' : ['10', '11', '12', '13', '14', '15']
+}
+
+order = ['hemostasis', 'inflammation', 'proliferation', 'maturation']
+num_images_list = [2, 14, 0, 0]
+
+:---:
+
+After these parameters are set up, you can call on the get_ordered_images function in order to get a randomized
+selection of images that match the parameters stated from earlier. The way get_ordered_images works is that it
+gets all of the address for each labeled images and randomly picks a certain amount of them and then adds it to
+an array. After the process is done it moves on to the next group and collects the number of images it is requested
+to grab. This processes is repeated until the correct amount of images is collected.
+
+The function plot_images, just plots in the images in the order they are stored and labels them. 
+
+The data is not stored however, if you wish to do this you would have to use the pickle library to store the 
+array data. However it would be easy to implement. 
+
+# Contact
+
+If you require more explaination or have suggestions for the script please contact me:
+
+Work Email: seosorio@ucsc.edu
