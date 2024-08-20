@@ -262,15 +262,14 @@ def report(ep, device):
     plt.close()
 
 
-
 def train(age='A8'):
     args = HealNetParameters()
 
     device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
 
-    args.model_dir = '../../../res/models/deepmapper/'
-    args.data_dir = '../../../res/data/deepmapper/'
-    args.figs_dir = '../../../res/figs/deepmapper/'
+    args.model_dir = './res/models/deepmapper/'
+    args.data_dir = './res/data/deepmapper/'
+    args.figs_dir = './res/figs/deepmapper/'
 
     dirs = [args.data_dir, args.figs_dir, args.model_dir]
     for dirtmp in dirs:
@@ -278,7 +277,7 @@ def train(age='A8'):
             os.makedirs(dirtmp)
 
     runs_dir = '_'.join(('_'.join(time.asctime().split(' '))).split(':')) + '_alg_' + 'deepmapper_{}'.format(age)
-    runs_dir = '../../../runs/runs_deepmapper/{}'.format(runs_dir)
+    runs_dir = './res/runs/runs_deepmapper/{}'.format(runs_dir)
     os.makedirs(runs_dir)
 
     writer = SummaryWriter(log_dir=runs_dir)
@@ -298,24 +297,24 @@ def train(age='A8'):
         avg_loss = 0.0
         cnt = 0
 
-        imdir = '../../../../WoundDataDARPA/MouseData/'
+        imdir = 'E:/data/MouseData/'
         df = pd.read_csv(imdir + 'all_train_imgs.csv')
 
         wnums = set(df.loc[(df.Age == age)].WNum.values)
         sides = ['L', 'R']
+        look_ahead_cnt = 3
 
         for wn in wnums:
             for side in sides:
                 image_paths = create_imdirs_from_csv(age, wn, side)
-                if image_paths is None or len(image_paths) < 4:
+                if image_paths is None or len(image_paths) < look_ahead_cnt:
                     continue
                 optimizer.zero_grad()
-                look_ahead_cnt = 3
                 for idx in range(len(image_paths)):
                     if idx < len(image_paths) - look_ahead_cnt:
                         curr_device_image = preprocess(image_paths[idx])
                         next_device_image = preprocess(image_paths[idx + 1])
-                        next4_device_image = preprocess(image_paths[idx + look_ahead_cnt])
+                        next_n_device_image = preprocess(image_paths[idx + look_ahead_cnt])
 
                         curr_image_data = np.expand_dims(curr_device_image.T, axis=0)
                         curr_image_data = torch.from_numpy(curr_image_data / 255.0).float().to(device)
@@ -323,30 +322,28 @@ def train(age='A8'):
                         next_image_data = np.expand_dims(next_device_image.T, axis=0)
                         next_image_data = torch.from_numpy(next_image_data / 255.0).float().to(device)
 
-                        next4_image_data = np.expand_dims(next4_device_image.T, axis=0)
-                        next4_image_data = torch.from_numpy(next4_image_data / 255.0).float().to(device)
+                        next_n_image_data = np.expand_dims(next_n_device_image.T, axis=0)
+                        next_n_image_data = torch.from_numpy(next_n_image_data / 255.0).float().to(device)
 
                         prob, A_prob, x_hat, x_next_hat = model(curr_image_data)
-                        prob_next, _, _, _ = model(next_image_data)
-                        prob_next4, _, _, _ = model(next4_image_data)
+                        prob_next_n, _, x_hat_n, _ = model(next_n_image_data)
+                        with torch.no_grad():
+                            prob_next, _, _, _ = model(next_image_data)
 
-                        A_prob_shift = model.shift(A_prob)
-                        for xxx in range(look_ahead_cnt - 1):
+                        A_prob_shift = prob
+                        for xxx in range(look_ahead_cnt):
                             A_prob_shift = model.shift(A_prob_shift)
 
-                        if idx <= 0:
-                            loss = 0.2 * criterion(x_hat, curr_image_data) + \
-                                   0.2 * criterion(x_next_hat, next_image_data) + \
-                                   0.4 * criterion(prob, init_prob) + \
-                                   0.05 * criterion(A_prob, prob_next.detach()) + \
-                                   0.05 * criterion(prob_next, A_prob.detach()) + \
-                                   0.1 * criterion(A_prob_shift, prob_next4)
-                        else:
-                            loss = 0.2 * criterion(x_hat, curr_image_data) + \
-                                   0.2 * criterion(x_next_hat, next_image_data) + \
-                                   0.15 * criterion(A_prob, prob_next.detach()) + \
-                                   0.15 * criterion(prob_next, A_prob.detach()) + \
-                                   0.3 * criterion(A_prob_shift, prob_next4)
+                        loss = criterion(x_hat, curr_image_data) + \
+                               criterion(x_next_hat, next_image_data) + \
+                               criterion(x_hat_n, next_n_image_data) + \
+                               criterion(A_prob, prob_next.detach()) + \
+                               criterion(prob_next_n, A_prob_shift.detach())
+
+                        # TODO: 1. Add constraints on zero time
+                        #       2. Add constraints on final time
+                        # loss += criterion(prob_init, mapper.init_prob)
+
                         optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
@@ -373,7 +370,10 @@ if __name__ == "__main__":
     np.random.seed(0)
     torch.random.manual_seed(0)
     # age = input('Age of Mounse: A8 or Y8 \n')
-    # train(age)
-    dir_models_A8 = 'D:/res/models/deepmapper/checkpoint_mouse_age_A8_ep_3192.pth'
-    dir_models_Y8 = 'D:/res/models/deepmapper/checkpoint_mouse_age_Y8_ep_3192.pth'
-    report(6999, device)
+    age = 'A8'
+    train(age)
+
+
+    # dir_models_A8 = 'D:/res/models/deepmapper/checkpoint_mouse_age_A8_ep_3192.pth'
+    # dir_models_Y8 = 'D:/res/models/deepmapper/checkpoint_mouse_age_Y8_ep_3192.pth'
+    # report(6999, device)

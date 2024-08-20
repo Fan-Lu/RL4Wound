@@ -95,7 +95,7 @@ class Autoencoder(nn.Module):
 
         return z
 
-    def shift(self, z, time_dif):
+    def shift(self, z, time_dif=7200):
         ks = F.relu(self.A_fc1(z))
         ks = F.relu(self.A_fc2(ks))
         ks = F.relu(self.A_fc3(ks))
@@ -111,7 +111,7 @@ class Autoencoder(nn.Module):
 
         return Az
 
-    def forward(self, x, time_dif):
+    def forward(self, x, time_dif=7200):
         z = self.encoder(x)
         x_hat = self.decoder(z)
         z_next = self.shift(z, time_dif)
