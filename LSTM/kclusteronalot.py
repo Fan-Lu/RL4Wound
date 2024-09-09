@@ -32,9 +32,20 @@ def apply_kmeans(image_path, n_clusters, cluster_colors):
     kmeans = KMeans(n_clusters=n_clusters, random_state=0)
     labels = kmeans.fit_predict(img_array_flat)
 
-    # Map cluster labels to colors
-    clustered_img_array_flat = np.array([cluster_colors[label] for label in labels])
-    clustered_img_array = clustered_img_array_flat.reshape(img_array.shape)
+    cluster_means = []
+    for i in range(n_clusters):
+        cluster_pixels = img_array_flat[labels == i]
+        avg_intensity = np.mean(cluster_pixels)
+        cluster_means.append(avg_intensity)
+
+    sorted_clusters = np.argsort(cluster_means)
+
+    new_labels = np.zeros_like(labels)
+    for i, cluster in enumerate(sorted_clusters):
+        new_labels[labels == cluster] = i
+
+    reordered_clustered_img_array_flat = np.array([cluster_colors[label] for label in new_labels])
+    clustered_img_array = reordered_clustered_img_array_flat.reshape(img_array.shape)
 
     return img, clustered_img_array
 
