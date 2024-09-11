@@ -3,6 +3,27 @@ import numpy as np
 
 # Load and preprocess the image
 image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_A8-1-R.png'
+image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_Y8-2-L.png'
+image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/15/Day 15_Y8-2-L.png'
+image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/1/Day 1_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/2/Day 2_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/3/Day 3_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/4/Day 4_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/5/Day 5_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/6/Day 6_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/7/Day 7_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/8/Day 8_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/9/Day 9_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/10/Day 10_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/11/Day 11_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/12/Day 12_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/13/Day 13_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/14/Day 14_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/15/Day 15_Y8-2-L.png'
+
+
+
 image = cv2.imread(image_path)
 
 cv2.imshow('Wound Image', image)

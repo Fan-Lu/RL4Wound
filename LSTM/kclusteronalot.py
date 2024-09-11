@@ -7,6 +7,25 @@ import matplotlib.patches as patches
 
 # Directory containing images
 image_dir = '/Users/bearcbass/RL4Wound/data/MouseData/train/0'
+image_paths = [
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/1/Day 1_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/2/Day 2_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/3/Day 3_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/4/Day 4_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/5/Day 5_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/6/Day 6_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/7/Day 7_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/8/Day 8_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/9/Day 9_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/10/Day 10_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/11/Day 11_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/12/Day 12_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/13/Day 13_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/14/Day 14_Y8-2-L.png',
+    '/Users/bearcbass/RL4Wound/data/MouseData/train/15/Day 15_Y8-2-L.png'
+]
+
 
 # Number of clusters
 n_clusters = 3
@@ -47,7 +66,10 @@ def apply_kmeans(image_path, n_clusters, cluster_colors):
     reordered_clustered_img_array_flat = np.array([cluster_colors[label] for label in new_labels])
     clustered_img_array = reordered_clustered_img_array_flat.reshape(img_array.shape)
 
-    return img, clustered_img_array
+    wound_cluster = 1 # assuming this is the wound
+    wound_area = np.sum(new_labels == wound_cluster)
+
+    return img, clustered_img_array, wound_area
 
 # Plot images with legends
 def plot_images_with_legend(original_images, clustered_images, titles, cluster_colors):
@@ -78,14 +100,20 @@ original_images = []
 clustered_images = []
 titles = []
 
-for filename in os.listdir(image_dir):
-    if filename.endswith('.png'):
-        image_path = os.path.join(image_dir, filename)
-        original_img, clustered_image = apply_kmeans(image_path, n_clusters, cluster_colors)
-        original_images.append(original_img)
-        clustered_images.append(clustered_image)
-        titles.append(filename)
+
+for image_path in image_paths:
+    original_img, clustered_image, _ = apply_kmeans(image_path, n_clusters, cluster_colors)
+    original_images.append(original_img)
+    clustered_images.append(clustered_image)
+    titles.append(os.path.basename(image_path))  # Extract file name for title
+
+# Plot all images
+plot_images_with_legend(original_images[:5], clustered_images[:5], titles[:5], cluster_colors)
+plot_images_with_legend(original_images[5:10], clustered_images[5:10], titles[5:10], cluster_colors)
+plot_images_with_legend(original_images[10:15], clustered_images[10:15], titles[10:15], cluster_colors)
+
+
 
 # Display first 5 images for brevity
-plot_images_with_legend(original_images[:3], clustered_images[:3], titles[:3], cluster_colors)
+#plot_images_with_legend(original_images[:5], clustered_images[:5], titles[:5], cluster_colors)
 print(original_images)

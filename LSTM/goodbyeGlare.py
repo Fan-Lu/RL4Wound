@@ -3,38 +3,67 @@ import cv2
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
-# Load and preprocess the image - I have a collection of some just to experment with
+# Load and preprocess the image
+image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/1/Day 1_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/2/Day 2_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/3/Day 3_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/4/Day 4_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/5/Day 5_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/6/Day 6_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/7/Day 7_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/8/Day 8_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/9/Day 9_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/10/Day 10_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/11/Day 11_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/12/Day 12_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/13/Day 13_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/14/Day 14_Y8-2-L.png'
+# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/15/Day 15_Y8-2-L.png'
 
-# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_A8-1-R.png'
-# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_A8-3-L.png'
-image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_A8-3-R.png'
-# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_A8-4-L.png'
-# image_path = '/Users/bearcbass/RL4Wound/data/MouseData/train/0/Day 0_A8-4-R.png'
+
+
+
 
 image = cv2.imread(image_path)
 
-# First im using bilateral filtering to try and remove the glare
+# Step 1: Apply bilateral filtering
 bilateral_filtered_image = cv2.bilateralFilter(image, d=9, sigmaColor=75, sigmaSpace=75)
 
-# Next we have to reshape the filtered image into a 2D array of pixels
+# Step 2: Reshape the filtered image into a 2D array of pixels
 pixels = bilateral_filtered_image.reshape(-1, 3)
 
-# Perform K-means clustering on the 2d array
-k = 3 # Number of clusters
+# Step 3: Perform K-means clustering
+k = 3  # Number of clusters
 kmeans = KMeans(n_clusters=k)
 kmeans.fit(pixels)
 
-# Create a mask for the cluster of interest
-cluster_index = 0
-mask = (kmeans.labels_ == cluster_index)
+# Step 4: Calculate the average pixel intensity for each cluster
+cluster_means = []
+for i in range(k):
+    cluster_pixels = pixels[kmeans.labels_ == i]
+    avg_intensity = np.mean(cluster_pixels)
+    cluster_means.append(avg_intensity)
 
-# Reshape the mask to match the original image dimensions
+# Step 5: Sort clusters by average intensity (lowest to highest)
+sorted_clusters = np.argsort(cluster_means)
+
+# Step 6: Reassign the cluster labels to match the sorted order
+new_labels = np.zeros_like(kmeans.labels_)
+for i, cluster in enumerate(sorted_clusters):
+    new_labels[kmeans.labels_ == cluster] = i
+
+# Step 7: Create a mask for the cluster of interest (after reordering)
+cluster_index = 1  # Now, the darkest cluster will always be 0
+mask = (new_labels == cluster_index)
+
+# Step 8: Reshape the mask to match the original image dimensions
 mask_image = mask.reshape(image.shape[:2]).astype(np.uint8) * 255  # Binary mask (255 for cluster of interest)
 
-# Find contours in the mask
+# Step 9: Find contours in the mask
 contours, _ = cv2.findContours(mask_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-# Draw contours and fill the detected regions
+# Step 10: Draw contours and fill the detected regions
 contour_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert to RGB for visualization
 cv2.drawContours(contour_image, contours, -1, (0, 255, 0), 2)  # Draw contours (green)
 
@@ -47,16 +76,7 @@ for contour in contours:
 refined_image = cv2.bitwise_and(image, image, mask=filled_mask)
 
 # Calculate the area of the mask
-# Count non-zero pixels in the filled mask
 area_pixels = np.sum(filled_mask > 0)
-
-# Convert area from pixels to a more interpretable unit (e.g., square centimeters) if needed
-# Assume each pixel represents a square unit of area; adjust as needed
-pixel_area = 1  # Adjust this if you know the physical size of each pixel
-area_units = area_pixels * pixel_area
-
-print(f'Area of the mask (in pixels): {area_pixels}')
-print(f'Area of the mask (in square units): {area_units}')
 
 # Visualize the results
 plt.figure(figsize=(15, 10))
@@ -74,7 +94,7 @@ plt.title('Bilateral Filtered Image')
 # Mask Image
 plt.subplot(1, 4, 3)
 plt.imshow(mask_image, cmap='gray')
-plt.title(f'Cluster {cluster_index} Mask')
+plt.title(f'Cluster {cluster_index} Mask (Darkest Cluster)')
 
 # Refined Image
 plt.subplot(1, 4, 4)
