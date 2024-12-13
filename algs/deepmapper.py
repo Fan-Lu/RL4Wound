@@ -40,6 +40,8 @@ from pathlib import Path
 from envs.env import simple
 from scipy.integrate import odeint
 
+import sys
+
 from utils.ims import merge_zstack
 
 # desktop = os.path.join('./', 'Desktop')
@@ -84,19 +86,22 @@ class DeepMapper(object):
         # if deviceArgs.
         if not deviceArgs.isTrain:
             print('Finish loading DNN models...')
+            sys.stdout.flush()
             self.model.load_state_dict(torch.load(deviceArgs.desktop_dir + 'Close_Loop_Actuation/models/deepmapper_ep_final.pth'))
 
-        self.criterion = nn.MSELoss()
+        self.MSELoss = nn.MSELoss()
+        self.CRELoss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
-        self.num_epochs = 1000
-        self.ndays = 8
-
-        # self.xrange = np.linspace(0, self.ndays, 12 * 10)
-        self.xrange = np.linspace(0, self.ndays, 77)
 
         # we assume that whent the wound is created, it has prob h one
         self.init_prob = torch.from_numpy(np.array([1., 0., 0., 0.])).view(1, -1).float().to(self.device)
+        self.fina_prob = torch.from_numpy(np.array([0., 0.05, 0.15, 0.8])).view(1, -1).float().to(self.device)
 
+        try:
+            last_prbs = pd.read_csv(self.deviceArgs.deepmapper_prob_file_name)
+            self.A_Prob = torch.from_numpy(last_prbs.iloc[-1][4:8].values.astype(np.float32))
+        except:
+            self.A_Prob = None
 
     def ds_merge(self, im_dir, gen_dirs=None):
         '''
@@ -136,8 +141,6 @@ class DeepMapper(object):
         image_dir.sort()
         prob_buf = np.array([1., 0., 0., 0.])
         time_process = str2sec(str(image_dir[0])[-20:-5]) - 7200.0
-        err = 0
-        grd = 0
         allks = []
 
         for idx in range(len(image_dir)):
@@ -158,9 +161,6 @@ class DeepMapper(object):
             x_hat_np = x_hat_np * 255
             im_hat = Image.fromarray(x_hat_np.astype(np.uint8))
             im_org = Image.fromarray((curr_image_data.data.numpy().squeeze().T * 255).astype(np.uint8))
-
-            err += np.sum(np.abs(x_hat_np - (curr_image_data.data.numpy().squeeze().T * 255)))
-            grd += np.sum(x_hat_np)
 
             im_gens.append(im_hat)
             im_orgs.append(im_org)
@@ -190,7 +190,6 @@ class DeepMapper(object):
         leg_pos = (1, 0.5)
         ax.legend(loc='center left', bbox_to_anchor=leg_pos)
         ax.set_xlabel('Time (day)')
-        plt.tight_layout()
 
         ax = fig.add_subplot(212)
         ax.step(xrange[1:], allks[:, 0], color='r', label='kh')
@@ -200,21 +199,113 @@ class DeepMapper(object):
         ax.set_xlabel('Time (day)')
         plt.tight_layout()
 
-        probdf = pd.DataFrame(prob_buf)
-        probdf.to_csv('./data_save/exp_{}/deepmapper/data_wound_{}/probs_wound_{}_ep_{}.csv'.format(
-            self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
-
-        allkdf = pd.DataFrame(allks)
-        allkdf.to_csv('./data_save/exp_{}/deepmapper/data_wound_{}/allks_wound_{}_ep_{}.csv'.format(
-            self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
+        # probdf = pd.DataFrame(prob_buf)
+        # probdf.to_csv('./data_save/exp_{}/probs_wound_{}_ep_{}.csv'.format(
+        #     self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
+        #
+        # allkdf = pd.DataFrame(allks)
+        # allkdf.to_csv('./data_save/exp_{}/allks_wound_{}_ep_{}.csv'.format(
+        #     self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
 
         if self.writer is not None:
             self.writer.add_figure('wsd_stage/prob', fig, ep)
             self.writer.add_image('wsd_stage/im_orgs', img_to_array(dst1) / 255.0, ep, dataformats='HWC')
             self.writer.add_image('wsd_stage/im_gens', img_to_array(dst2) / 255.0, ep, dataformats='HWC')
         else:
-            plt.savefig('./data_save/exp_{}/deepmapper/data_wound_{}/stages_wound_{}_ep_{}.png'.format(
+            plt.savefig('./data_save/exp_{}/stages_wound_{}_ep_{}.png'.format(
             self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
+
+        plt.close()
+        dst1.close()
+        dst2.close()
+
+    def test_psu(self, ep, image_dir):
+        im_gens = []
+        im_orgs = []
+        image_dir.sort()
+        prob_buf = np.array([1., 0., 0., 0.])
+        time_process = str2sec(str(image_dir[0])[-20:-5]) - 7200.0
+        allks = []
+
+        for idx in range(84):
+
+            if idx < len(image_dir):
+
+                # xrange.append((xrange[-1] + 1) * 2)
+                curr_device_image = self.process_im(image_dir[idx])
+                curr_image_data = np.expand_dims(curr_device_image.T, axis=0)
+                curr_image_data = torch.from_numpy(curr_image_data / 255.0).float().to(self.device)
+
+                time_dif = str2sec(str(image_dir[idx])[-20:-5]) - time_process
+                time_process = str2sec(str(image_dir[idx])[-20:-5])
+
+                prob, A_prob, x_hat, x_next_hat = self.model(curr_image_data, time_dif)
+                allks.append([self.model.Kh, self.model.Ki, self.model.Kp])
+
+                prob_buf = np.vstack((prob_buf, A_prob.cpu().data.numpy().squeeze()))
+
+                x_hat_np = x_hat.data.numpy().squeeze().T
+                x_hat_np = x_hat_np * 255
+                im_hat = Image.fromarray(x_hat_np.astype(np.uint8))
+                im_org = Image.fromarray((curr_image_data.data.numpy().squeeze().T * 255).astype(np.uint8))
+
+                im_gens.append(im_hat)
+                im_orgs.append(im_org)
+            else:
+                A_prob = self.model.shift(A_prob, 7200.0)
+                allks.append([self.model.Kh, self.model.Ki, self.model.Kp])
+                prob_buf = np.vstack((prob_buf, A_prob.cpu().data.numpy().squeeze()))
+
+        allks = np.array(allks).reshape(-1, 3)
+
+        probs_smoothed = smoother(prob_buf[:, 1])
+
+        numIms = len(im_orgs)
+        numRows = numIms // 7
+        if numIms % 7 > 0:
+            numRows += 1
+
+        dst1 = Image.new('RGB', (128 * 7, 128 * numRows))
+        dst2 = Image.new('RGB', (128 * 7, 128 * numRows))
+        for j in range(numRows):
+            for i in range(7):
+                if (i + j * 7) < numIms:
+                    dst1.paste(im_orgs[i + j * 7], (i * 128, 128 * j))
+                    dst2.paste(im_gens[i + j * 7], (i * 128, 128 * j))
+
+        # if progressor is not None:
+        xrange = [hr / 12.0 for hr in range(len(prob_buf))]
+        fig = plt.figure(figsize=(8, 8))
+        ax = fig.add_subplot(211)
+        ax.plot(xrange[1:], prob_buf[1:, 0], color='r', label='H')
+        # ax.plot(xrange[1:], prob_buf[1:, 1], color='g', label='I')
+        ax.plot(xrange[1:], prob_buf[1:, 2], color='b', label='P')
+        ax.plot(xrange[1:], prob_buf[1:, 3], color='y', label='M')
+
+        ax.plot(xrange[1:], probs_smoothed[1:], color='g', linestyle='dashed')
+
+        leg_pos = (1, 0.5)
+        ax.legend(loc='center left', bbox_to_anchor=leg_pos)
+        ax.set_xlabel('Time (day)')
+
+        ax = fig.add_subplot(212)
+        ax.step(xrange[1:], allks[:, 0], color='r', label='kh')
+        ax.step(xrange[1:], allks[:, 1], color='g', label='ki')
+        ax.step(xrange[1:], allks[:, 2], color='b', label='kp')
+        ax.legend(loc='center left', bbox_to_anchor=leg_pos)
+        ax.set_xlabel('Time (day)')
+        plt.tight_layout()
+
+        # probdf = pd.DataFrame(prob_buf)
+        # probdf.to_csv('./data_save/exp_{}/probs_wound_{}_ep_{}.csv'.format(
+        #     self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
+        #
+        # allkdf = pd.DataFrame(allks)
+        # allkdf.to_csv('./data_save/exp_{}/allks_wound_{}_ep_{}.csv'.format(
+        #     self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
+
+        plt.savefig('./data_save/exp_{}/stages_wound_{}_ep_{}.png'.format(
+        self.deviceArgs.expNum, self.deviceArgs.wound_num, self.deviceArgs.wound_num, ep))
 
         plt.close()
         dst1.close()
@@ -229,8 +320,10 @@ class DeepMapper(object):
 
         # merging and downsampling
         print('Merging generated images of {}...'.format(im_dir.split('/')[-1]))
+        sys.stdout.flush()
         wound_image = self.ds_merge(im_dir)
         print('Finish image generation.')
+        sys.stdout.flush()
         device_image = img_to_array(wound_image)
         img_avg = device_image.mean(axis=(0, 1))
         device_image = np.clip(device_image + np.expand_dims(avg_dv - img_avg, axis=0), 0, 255).astype(int)
@@ -250,14 +343,30 @@ class DeepMapper(object):
 
         # merging and downsampling
         print('Merging generated images of {}...'.format(im_dir.split('/')[-1]))
+        sys.stdout.flush()
         wound_image = self.ds_merge(im_dir)
         print('Finish image generation.')
+        sys.stdout.flush()
         device_image = img_to_array(wound_image)
         img_avg = device_image.mean(axis=(0, 1))
         device_image = np.clip(device_image + np.expand_dims(avg_dv - img_avg, axis=0), 0, 255).astype(int)
         device_image = np.expand_dims(device_image.T, axis=0)
         device_image = torch.from_numpy(device_image / 255.0).float().to(self.device)
-        probs, A_prob, x_hat, x_next_hat = self.model(device_image, time_dif)
-        A_prob = A_prob.cpu().data.numpy().squeeze()
+
+        # if len(os.listdir(im_dir + '/..')) <= 30 or self.A_Prob is None:
+        if self.A_Prob is None:
+
+            device_image = img_to_array(wound_image)
+            img_avg = device_image.mean(axis=(0, 1))
+            device_image = np.clip(device_image + np.expand_dims(avg_dv - img_avg, axis=0), 0, 255).astype(int)
+            device_image = np.expand_dims(device_image.T, axis=0)
+            device_image = torch.from_numpy(device_image / 255.0).float().to(self.device)
+            probs, A_prob, x_hat, x_next_hat = self.model(device_image, time_dif)
+            self.A_Prob = A_prob
+            A_prob = A_prob.cpu().data.numpy().squeeze()
+        else:
+            self.A_Prob = self.model.shift(self.A_Prob, time_dif)
+            A_prob = self.A_Prob.cpu().data.numpy().squeeze()
+            x_hat = device_image
 
         return A_prob, device_image.cpu().data.numpy().squeeze().T, x_hat.cpu().data.numpy().squeeze().T

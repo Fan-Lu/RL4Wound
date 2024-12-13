@@ -3,11 +3,11 @@
 """
 Created on Mon Oct 30 12:48:43 2023
 
-@author: manasakesapragada
+@author: Manasa Kesapragada
 """
 
-# Run this app with `python app.py` and
-# visit http://127.0.0.1:8050/ in your web browser.
+# Run this app with `python PhysiciansGUI.py` and
+# visit http://127.0.0.1:8055/ in your web browser.
 
 from dash import Dash, html, dcc
 import dash_bootstrap_components as dbc
@@ -21,35 +21,40 @@ import numpy as np
 import plotly.io as pio
 import datetime
 from skimage import io
+import shutil
+import os
 
-
-# TODO: Added by Fan Lu
 
 # Global name for csv file
-csv_file_name = "data_save/exp_21/comb_wound_6.csv"
-
-def reset_time_stampe(df):
-    lnu = len(df)
-    day_change_idx = []
-    for idx in range(1, lnu):
-        if df.loc[idx, 'time(s)'] < df.loc[idx - 1, 'time(s)']:
-            day_change_idx.append(idx)
-    for day_idx in day_change_idx:
-        for idx in range(day_idx, lnu):
-            df.loc[idx, 'time(s)'] = df.loc[idx, 'time(s)'] + df.loc[day_idx - 1, 'time(s)']
-    return df
+# csv_file_name = "./data_save/exp_25/comb_wound_1.csv"
 
 
-#import plotly.graph_objects as go
+wound_num = input('Please select wound number, for example: 1'
+                  '\n Wound #: ')
+wound_num = int(wound_num.replace(' ', ''))
+print('Wound number is set to {} !!!'.format(wound_num))
+
+csv_file_name = "./data_save/exp_23/comb_wound_{}.csv".format(wound_num)
+
 
 dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css"
-
-
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.ZEPHYR, dbc_css, dbc.themes.BOOTSTRAP])
 
 app.title = "Interface for Physicians"
 
+def reset_time_stampe(df):
+    lnu = len(df)
+    day_change_idx = []
+    df['time'] = df['time(s)'] - df['time(s)'].iloc[0]
+
+    for idx in range(1, lnu):
+        if df.loc[idx, 'time'] < df.loc[idx - 1, 'time']:
+            day_change_idx.append(idx)
+    for day_idx in day_change_idx:
+        for idx in range(day_idx, lnu):
+            df.loc[idx, 'time'] = df.loc[idx, 'time'] + df.loc[day_idx - 1, 'time']
+    return df
 
 df_combined = pd.read_csv(csv_file_name)
 df_combined_forDosage = pd.read_csv(csv_file_name)
@@ -64,7 +69,7 @@ df_combined['conv_time'] = pd.to_datetime(datetime_str[0], format='%Y-%m-%d-%H-%
 
 pred_time = px.line(df_combined, x="conv_time", y=selected_columns)
 
-df_m1m2 = pd.read_csv("out_wound_6_lowEF_2023-03-03-10-07.csv")
+# df_m1m2 = pd.read_csv("out_wound_6_lowEF_2023-03-03-10-07.csv")
 
 
 df_main = pd.read_csv('woundprogress.csv')
@@ -87,24 +92,13 @@ g_per_mol = 309.33  # Molecular weight of flx
 #charge = current_in_amperes * time_in_seconds  # Calculate charge in Coulombs
 #dose = eta * charge * g_per_mol / (F * 1e3)
 
-
-# def drug_conc(current, time):
-#     charge = current * time 
-#     dose = eta * charge * g_per_mol / (F * 1e3)
-#     return dose
-
-# def cum_drug_conc(df, name):
-#     cum_drug = [[drug_conc(df['{}_ch_{}'.format(name, ch)].iloc[i],
-#                            float(df['time(s)'].iloc[i]) - float(df['time(s)'].iloc[i - 1]))
-#                  for i in range(1, len(df))] for ch in range(1, 9)]
-#     cum_drug = [[sum(cum_drug[ch][:i]) for i in range(len(df) - 1)] for ch in range(8)]
-#     return np.array(cum_drug)
-
 def cum_drug_conc(df, name):
     doses = np.zeros((8, len(df) - 1))
-    for ch in range(1, 9):
+    for ch in (1, 3, 5, 7):
         currents = df[f'{name}_ch_{ch}'].iloc[1:].values
-        times = df['time(s)'].iloc[1:].values - df['time(s)'].iloc[:-1].values
+        df['time'] = df['time(s)'] - df['time(s)'].iloc[0]
+
+        times = df['time'].iloc[1:].values - df['time'].iloc[:-1].values
         charges = currents * times
         doses[ch-1] = eta * charges * g_per_mol / (F * 1e3)
     cum_doses = np.cumsum(doses, axis=1)
@@ -113,7 +107,9 @@ def cum_drug_conc(df, name):
 
 ##Live plot --Current
 df_combined[df_combined.columns[9:17]]  = df_combined[df_combined.columns[9:17]] * 5e6
-df_combined['time(h)'] = df_combined['time(s)'] / 3600
+df_combined['time'] = df_combined['time(s)'] - df_combined['time(s)'].iloc[0]
+
+df_combined['time(h)'] = df_combined['time'] / 3600
 current_time = px.line(df_combined, x="time(h)", y=df_combined.columns[9:17])
 current_time.update_layout(
    yaxis_title="EF Strength (mV/mm)",
@@ -145,8 +141,9 @@ cum_dosageT = cum_dosage.T
 # Creating a DataFrame from the transposed array
 dose_df = pd.DataFrame(cum_dosageT)
 dose_df.insert(0, 'time(s)', df_combined_forDosage['time(s)'])
-dose_df['time(h)'] = dose_df['time(s)'] / 3600
-dosage_time = px.line(dose_df, x=dose_df['time(h)'], y=dose_df.columns[1:])
+dose_df['time'] = dose_df['time(s)'] - dose_df['time(s)'].iloc[0]
+dose_df['time(h)'] = dose_df['time'] / 3600
+dosage_time = px.line(dose_df, x=dose_df['time(h)'], y=dose_df.columns[1:9])
 dosage_time.update_layout(
     yaxis_title="Dose (mg)",
     xaxis_title="Time (hours)",
@@ -167,27 +164,6 @@ labels = ['Channel 1', 'Channel 2','Channel 3','Channel 4','Channel 5','Channel 
 # Update the traces with custom labels and colors
 for i, trace in enumerate(dosage_time.data):
     trace.name = labels[i]  # i + 1 to skip the 'Time' column
-
-
-###Live plot --M1/M2 ratio
-df_m1m2['time (min)'] = pd.to_datetime(df_m1m2['time (min)'], format='%Y-%m-%d-%H-%M')
-df_m1m2['date'] = df_m1m2['time (min)'].dt.date
-daily_avg = df_m1m2.groupby('date')['m1/m2'].mean().reset_index()
-
-
-m1m2_ratio = px.bar(daily_avg,  x='date', y='m1/m2')
-m1m2_ratio.update_layout(
-    yaxis_title="M1/M2 Ratio",
-    xaxis_title="Day",
-    legend_title="Wound 6",
-    legend=dict(
-    orientation="h",
-    yanchor="bottom",
-    y=1.02,
-    xanchor="right",
-    x=1
-)
-)
 
 ##Live plot --Current
 controller_odes = px.line(df_main, x="Time", y="wound_progress_target")
@@ -212,7 +188,6 @@ for i, trace in enumerate(controller_odes.data):
 ##Current time wound stage prob bar plot
 colors = ['blue','yellow', 'green', 'orange']
 
-
 pred_stage = px.bar(x=df_combined[selected_columns].iloc[-1].index, y = df_combined[selected_columns].iloc[-1].values, color=colors)
 pred_stage.update_layout(
     showlegend=False,
@@ -220,31 +195,14 @@ pred_stage.update_layout(
     yaxis_title="Probability",
 )
 
-# wound_img = io.imread('assets/sample.jpg')
-# wound_fig = px.imshow(wound_img)
-
-df_combined = pd.read_csv(csv_file_name)
-
-# TODO: Added by Fan Lu
-df_combined = reset_time_stampe(df_combined)
-
-img = io.imread(df_combined['Image'].iat[-1])
-wound_fig = px.imshow(img)
-
-tab0_content = dbc.Card([
-    dbc.CardBody([
-        dcc.Graph(
-            id='wound_image',
-            figure=wound_fig),
-        dcc.Interval(id = "update-woundimage", interval = 10000, n_intervals = 0)
-    ])
-])
+image_link = df_combined['Image'].iloc[-1]
 
 tab1_content = dbc.Card([
     dbc.CardHeader("Wound Image"),
     dbc.CardBody([
         html.P("Wound Image",className="card-text"),
-        dbc.CardImg(src="assets/sample.jpg") 
+        dbc.CardImg(id="wound-image",src=""),
+        dcc.Interval(id = "update-woundimage", interval = 10000, n_intervals = 0)
     ])
    
 ])
@@ -281,17 +239,6 @@ tab4_content = dbc.Card([
                     ])
 ], className="p-4 border border-0 ")
 
-tab5_content = dbc.Card([
-    dbc.CardBody([
-        dcc.Graph(
-            id='m1-m2-ratio',
-            figure=m1m2_ratio),
-        dcc.Interval(id = "update-m1m2", interval = 1000000, n_intervals = 0)
-        # html.P("Visualizing treatment",className="card-text"),
-        # dbc.CardImg(src="assets/drug_t.png") 
-    ])
-], className="p-4 border border-0 ")
-
 ## Masked screen
 # Read the contents of the local text file
 
@@ -308,12 +255,6 @@ maskedScreen = html.Div([
                     html.H2("Wound State", className="card-title", id = 'woundState', style={'width': '50%','display': 'inline-block','text-align': 'center'}),
                     html.P(id="wound_state", className="card-text",style={'width': '50%','display': 'inline-block','text-align': 'center', 'font-size': '2em'}),
                     dcc.Interval(id = "update-state", interval = 100000, n_intervals = 0)
-                    # dbc.Col([
-                    #     html.P(wound_state, className="card-text"),
-                    # ],style={'width': '50%','display': 'inline-block','text-align': 'center'}),
-                    # dbc.Col([
-                    #     dbc.Button([go_to_details_icon, 'Go to the Details'], className = "me-1", id = "goStatBtn", n_clicks=0)
-                    #   ],style={'width': '50%','display': 'inline-block','text-align': 'center'})
                      ])
                 ], color="dark", inverse=True, className='card border-primary mb-3'),
         
@@ -332,7 +273,7 @@ app.layout = dbc.Container([
                 dbc.CardBody([
                     html.P("Adjust proposed drug concentrations at next treatment time", className="card-text"),
                     dbc.Col([
-                        dbc.Input(id="drug-concentration-input", type="number", min=0, max=0.1, step=0.01, placeholder="Enter the Drug Conc [0-0.1 mg]..."),
+                        dbc.Input(id="drug-concentration-input", type="number", min=0, max=0.025, step=0.001, placeholder="Enter the Drug Conc [0-0.1 mg]..."),
                     ],style={'width': '50%','display': 'inline-block'}),
                     dbc.Col([
                         dbc.Button("Set Drug Concentration", id="set-drug-concentration-btn", color="info"),
@@ -351,7 +292,7 @@ app.layout = dbc.Container([
                         
                         html.P("Adjust proposed EF Strength at next treatment time", className="card-text"),
                         dbc.Col([
-                            dbc.Input(id="ef-strength-input", type="number", min=0, max=35, step=1, placeholder="Enter the EF Strength [0-35 mV/mm]..."),
+                            dbc.Input(id="ef-strength-input", type="number", min=0, max=50, step=1, placeholder="Enter the EF Strength [0-35 mV/mm]..."),
                         ],style={'width': '50%','display': 'inline-block'}),
                         dbc.Col([
                             dbc.Button("Set Electric Field Strength", id="set-efstrength-btn", color="info"),
@@ -382,9 +323,7 @@ app.layout = dbc.Container([
                 ],width=8)
         
         ],className = "mb-2 mt-2"),
-        
 
-        
         dbc.Row([
           dbc.Col([
             dbc.Card([
@@ -399,7 +338,7 @@ app.layout = dbc.Container([
             ],width=4),
 
             dbc.Col([
-                tab0_content
+                tab1_content
               ],width=4)
      
       
@@ -424,11 +363,9 @@ app.layout = dbc.Container([
           dbc.Row([
             dbc.Col([
             dbc.Tabs([
-                # dbc.Tab(tab0_content, label="Real-time wound image"),
                 dbc.Tab(tab2_content, label="Drug Concentration vs time"),
                 dbc.Tab(tab3_content, label="EF Strength vs time"),
-                dbc.Tab(tab4_content, label="Wound Stage Predictions" ),
-                dbc.Tab(tab5_content, label="M1/M2 Ratio" )
+                dbc.Tab(tab4_content, label="Wound Stage Predictions")
             ])  
         ], width=8),
        ],className = "mb-2 mt-2"),  
@@ -584,13 +521,14 @@ def updatehealerAI_plot(n_intervals):
     # TODO: Fan Lu: reset timestamp using reset_time_stamp function will cause wound stage not displaying
     # df_online = reset_time_stampe(df_online)
 
-    df_online['time(d)'] = df_combined['time(s)'] / 86400 
+    df_combined['time'] = df_combined['time(s)'] - df_combined['time(s)'].iloc[0]
+
+    df_online['time(d)'] = df_combined['time'] / 86400 
 
     df_main = df_main.sort_values(by='Time')
 
     controller_odes = px.scatter(df_main, x="Time", y=columns_woundprogression)
-    controller_odes.add_scatter( x =df_online['time(d)'],  y=df_online['wound_progress_DRLctr'], mode='markers', name='wound_progress_DRLctr')
-
+    controller_odes.add_scatter(x=df_online['time(d)'],  y=df_online['wound_progress_DRLctr'], mode='markers', name='wound_progress_DRLctr')
 
     controller_odes.update_layout(
        yaxis_title="Wound progression towards closure",
@@ -640,7 +578,6 @@ def updatehealerAI_plot(n_intervals):
         'wound_progress_target_-30%': '',
         'wound_progress_noctr': 'w/o Treatment',
         'wound_progress_DRLctr': 'w/ DRL treatment'
-        #'wound_progress_healnet': 'Experiment data - Deep Mapper'
     }
 
     # Update the traces with custom labels and colors
@@ -661,18 +598,20 @@ def updatehealerAI_plot(n_intervals):
         trace.showlegend = label != ''  # Hide legend if the label is an empty string
     
     #controller_odes.update_traces(mode='lines+markers')#, marker=dict(symbol='square', size=10))
-    marker_modes = ['lines', 'markers', 'markers', 'lines', 'lines', 'lines+markers']
+    marker_modes = ['lines', 'markers', 'markers', 'lines', 'lines', 'markers+lines']
     marker_sizes = [None, 4, 4, None, None, 10]  # Adjust the sizes as needed
+    # marker_symbols = [None, 'cross', 'x', None, None, 'triangle-up']
     marker_symbols = [None, 'cross', 'x', None, None, 'triangle-up']
 
 
     for i, trace in enumerate(controller_odes.data):
-        trace.mode = marker_modes[i]
-        
-        if 'markers' in marker_modes[i]:
-            trace.marker.size = marker_sizes[i]
-            trace.marker.symbol = marker_symbols[i]
-      
+        if i < 4:
+            trace.mode = marker_modes[i]
+
+            if 'markers' in marker_modes[i]:
+                trace.marker.size = marker_sizes[i]
+                trace.marker.symbol = marker_symbols[i]
+
 
     return controller_odes
 
@@ -696,21 +635,27 @@ def update_woundBar(n_intervals):
     return pred_stage
 
 
-##Call back for Dosage vs time plot
+##Call back for updating wound image
 @app.callback(
-    Output('wound_image', 'figure'),
-    [Input('update-woundimage', 'n_intervals')]
+    Output('wound-image', 'src'),
+    Input('update-woundimage', 'n_intervals')
 )
-def update_woundimage_plot(n_intervals):
+
+def update_image(n_intervals):
     df_combined = pd.read_csv(csv_file_name)
-
-    # TODO: Added by Fan Lu
     df_combined = reset_time_stampe(df_combined)
-
-    img = io.imread(df_combined['Image'].iat[-1])
-    wound_fig = px.imshow(img)
-
-    return wound_fig
+    image_link = df_combined['Image'].iloc[-1]
+    # Full path to the source image
+    src_image_path = image_link
+    # File name of the source image
+    image_file = os.path.basename(image_link)
+    # Full path to the destination image in the assets folder
+    dest_image_path = os.path.join("assets/", image_file)
+    # Copy the image file to the assets folder
+    shutil.copy(src_image_path, dest_image_path)
+    # Relative path for the image to be displayed in the app
+    relative_image_path = f'/assets/{image_file}'
+    return relative_image_path
 
 
 ##Call back for Dosage vs time plot
@@ -730,13 +675,15 @@ def update_DosagevsT_plot(n_intervals):
     # Creating a DataFrame from the transposed array
     dose_df = pd.DataFrame(cum_dosageT)
     dose_df.insert(0, 'time(s)', df_combined['time(s)'])
-        
-    dose_df['time(h)'] = dose_df['time(s)'] / 3600
-    dosage_time = px.line(dose_df, x=dose_df['time(h)'], y=dose_df.columns[1:])
+    dose_df['time'] = dose_df['time(s)'] - dose_df['time(s)'].iloc[0]
+    
+    dose_df['time(h)'] = dose_df['time'] / 3600
+    dosage_time = px.line(dose_df, x=dose_df['time(h)'], y=dose_df.columns[1:9])
     dosage_time.update_layout(
         yaxis_title="Dose (mg)",
         xaxis_title="Time (hours)",
         legend_title="",
+        yaxis_range=[0, 0.025],
         legend=dict(
         orientation="h",
         yanchor="bottom",
@@ -771,7 +718,9 @@ def update_EFvsT_plot(n_intervals):
     df_combined = reset_time_stampe(df_combined)
 
     df_combined[df_combined.columns[9:17]]  = df_combined[df_combined.columns[9:17]] * 5e6
-    df_combined['time(h)'] = df_combined['time(s)'] / 3600
+    df_combined['time'] = df_combined['time(s)'] - df_combined['time(s)'].iloc[0]
+
+    df_combined['time(h)'] = df_combined['time'] / 3600
     current_time = px.line(df_combined, x="time(h)", y=df_combined.columns[9:17])
     current_time.update_layout(
        yaxis_title="EF Strength (mV/mm)",
@@ -804,14 +753,16 @@ def update_woundstage_plot(n_intervals):
     df_combined = pd.read_csv(csv_file_name)
     # TODO: Fan Lu: reset timestamp using reset_time_stamp function will cause wound stage not displaying
     # df_combined = reset_time_stampe(df_combined)
-
     datetime_str = df_combined['Image'].str.extract(r'(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})')
-    df_combined['conv_time'] = pd.to_datetime(datetime_str[0], format='%Y-%m-%d-%H-%M-%S', errors='coerce')
+    df_combined['conv_time'] = (df_combined['time(s)'] - df_combined['time(s)'].iloc[0]) / (86400.0)
+    # df_combined['conv_time'] = pd.to_datetime(datetime_str[0], format='%Y-%m-%d-%H-%M-%S', errors='coerce')
     pred_time = px.line(df_combined, x="conv_time", y=selected_columns)
     pred_time.update_layout(
         yaxis_title="Wound stage probability",
-        xaxis_title="Days from the wound onset",
+        xaxis_title="Hours from the wound onset",
         legend_title="Wound stages",
+       # xaxis=dict(fixedrange=True),  # Disable zoom on the x-axis
+       # yaxis=dict(scaleanchor="x"),   # Allow zoom on the y-axis
         legend=dict(
         orientation="h",
         yanchor="bottom",
@@ -825,4 +776,4 @@ def update_woundstage_plot(n_intervals):
 
 
 if __name__ == '__main__':
-    app.run_server(port=8055,debug=False, dev_tools_hot_reload=False)
+    app.run_server(port=8057,debug=False, dev_tools_hot_reload=False)

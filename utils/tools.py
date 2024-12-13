@@ -1,7 +1,9 @@
 
 
 import torch
-
+import scipy
+from scipy.ndimage import uniform_filter1d
+from statsmodels.nonparametric.kernel_regression import KernelReg
 
 def str2sec(t):
     month_days = {1: 31, 2: 29, 3: 31, 4: 30,
@@ -12,6 +14,11 @@ def str2sec(t):
     total_time = sum([a * b for a, b in zip(ftr, [int(day), int(hour), int(min)])]) + month_days[int(month)] * 86400.0
     return total_time
 
+
+def smoother(y):
+    kr = KernelReg(y, range(len(y)), 'c')
+    y_pred, y_std = kr.fit(range(len(y)))
+    return y_pred
 
 class SharedAdam(torch.optim.Adam):
     """
@@ -31,3 +38,5 @@ class SharedAdam(torch.optim.Adam):
                 # share in memory
                 state['exp_avg'].share_memory_()
                 state['exp_avg_sq'].share_memory_()
+
+

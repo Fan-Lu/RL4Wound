@@ -30,54 +30,57 @@ class Autoencoder(nn.Module):
         self.dec_fc1 = nn.Linear(h_dim, 128)
         self.dec_fc2 = nn.Linear(128, 4 * 32 * 32)
 
-        self.A_fc1 = nn.Linear(h_dim, 32)
-        self.A_fc2 = nn.Linear(32, 64)
-        self.A_fc3 = nn.Linear(64, 32)
-        self.A_fc4 = nn.Linear(32, 3)
+        self.A_fc1 = nn.Linear(h_dim, 64)
+        self.A_fc2 = nn.Linear(64, 64)
+        self.A_fc3 = nn.Linear(64, 3)
 
         ## decoder layers ##
         ## a kernel of 2 and a stride of 2 will increase the spatial dims by 2
         # self.t_conv1 = nn.ConvTranspose2d(1, 4, 2, stride=2)
         self.t_conv1 = nn.ConvTranspose2d(4, 16, 2, stride=2)
-        self.t_b1 = nn.BatchNorm2d(16)
+        self.t_bn1 = nn.BatchNorm2d(16)
         self.t_conv2 = nn.ConvTranspose2d(16, 3, 2, stride=2)
         self.t_b2 = nn.BatchNorm2d(3)
 
         # sampling time
         # self.sample_time = 0.1001
-        self.sample_time = 0.2
+        # use 0.1 for invivo 23
+        # self.sample_time = 0.05
+        self.sample_time = 0.1
 
         self.Kh = 0.5
         self.Ki = 0.3
         self.Kp = 0.1
 
         self.Amat_masked = torch.zeros((3, 4, 4))
-        self.Amat_masked[0][0][0] = -1
-        self.Amat_masked[0][1][0] =  1
-        self.Amat_masked[1][1][1] = -1
-        self.Amat_masked[1][2][1] =  1
-        self.Amat_masked[2][2][2] = -1
-        self.Amat_masked[2][3][2] =  1
+        self.Amat_masked[0][0][0] = -1.0
+        self.Amat_masked[0][1][0] =  1.0
+        self.Amat_masked[1][1][1] = -1.0
+        self.Amat_masked[1][2][1] =  1.0
+        self.Amat_masked[2][2][2] = -1.0
+        self.Amat_masked[2][3][2] =  1.0
 
+        self.z_pre = torch.from_numpy(np.array([1., 0., 0., 0.])).view(1, -1).float()
         self.softmax = nn.Softmax(dim=1)
 
-        self.mina = torch.from_numpy(np.array([0.2, 0.1, 0.1]))
-        self.maxa = torch.from_numpy(np.array([0.8, 0.8, 0.8]))
+        self.mina = torch.from_numpy(np.array([0.5, 0.1, 0.001]))
+        self.maxa = torch.from_numpy(np.array([0.9, 0.5, 0.1]))
 
     def encoder(self, x):
         ## encode ##
         # add hidden layers with relu activation function
         # and maxpooling after
-        x = F.relu(self.conv1(x))
+        x = F.relu(self.bn1(self.conv1(x)))
         x = self.pool(x)  # compressed representation
         # add second hidden layer
-        x = F.relu(self.conv2(x))
+        x = F.relu(self.bn2(self.conv2(x)))
         x = self.pool(x)  # compressed representation
         # add third hidden layer
 
         x = x.view(1, -1)
         x = F.relu(self.enc_fc1(x))
-        x = F.softmax(self.enc_fc2(x), dim=1)
+        # x = F.softmax(self.enc_fc2(x), dim=1)
+        x = F.sigmoid(self.enc_fc2(x))
         # x = F.relu(self.enc_fc2(x))
 
         return x
@@ -89,29 +92,30 @@ class Autoencoder(nn.Module):
         z = F.relu(self.dec_fc2(z))
         z = z.view(1, 4, 32, 32)
         # add transpose conv layers, with relu activation function
-        z = F.relu(self.t_conv1(z))
+        z = F.relu(self.t_bn1(self.t_conv1(z)))
         # add transpose conv layers, with relu activation function
         z = F.sigmoid(self.t_conv2(z))
 
         return z
 
-    def shift(self, z, time_dif=7200):
+    def shift(self, z, time_dif):
+        # z_dff = (z - self.z_pre) / self.sample_time * (time_dif / 7200.0)
+        # self.z_pre = z.detach()
+
         ks = F.relu(self.A_fc1(z))
         ks = F.relu(self.A_fc2(ks))
-        ks = F.relu(self.A_fc3(ks))
-        ks = F.sigmoid(self.A_fc4(ks))
-        # ks = torch.clip(ks, self.mina, self.maxa).float()
-
-        self.Kh, self.Kp, self.Ki = ks.cpu().data.squeeze().numpy()
+        ks = F.sigmoid(self.A_fc3(ks))
+        ks = torch.clip(ks, self.mina, self.maxa).float()
 
         Amat = torch.tensordot(ks.reshape(1, 1, -1), self.Amat_masked, dims=[[2], [0]]).squeeze()
-        Az = torch.matmul(Amat, z.T).T
         # default sample time is 7200 seconds
-        Az = z + Az * self.sample_time * (time_dif / 7200)
+        Az = z + self.sample_time * (time_dif / 7200.0) * torch.matmul(Amat, z.T).T
 
-        return Az
+        self.Kh, self.Ki, self.Kp = ks.cpu().data.squeeze().numpy()
 
-    def forward(self, x, time_dif=7200):
+        return Az.clip(0, 1)
+
+    def forward(self, x, time_dif):
         z = self.encoder(x)
         x_hat = self.decoder(z)
         z_next = self.shift(z, time_dif)

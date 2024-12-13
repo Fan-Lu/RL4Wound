@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 import argparse
 
-def DeviceParameters(wound_no, desktop_dir):
+def DeviceParameters(wound_no, desktop_dir, demC='D'):
 
     parser = argparse.ArgumentParser(description='Device Setting')
 
@@ -19,7 +19,7 @@ def DeviceParameters(wound_no, desktop_dir):
                         help='wound number')
 
     # Experiment Number
-    expNum = 23
+    expNum = 25
 
     if not os.path.exists(desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/'.format(expNum)):
         os.makedirs(desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/'.format(expNum))
@@ -35,6 +35,7 @@ def DeviceParameters(wound_no, desktop_dir):
     fl_comb_file_name = desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/comb_wound_{}.csv'.format(expNum, wound_no)
     # deepmapper_prob_file_name = desktop_dir + 'Close_Loop_Actuation/data_save/prob_table_DeepMapper_wound_{}_{}.csv'.format(wound_no, curr_datetime)
     deepmapper_prob_file_name = desktop_dir + 'Close_Loop_Actuation/data_save/exp_{}/prob_table_DeepMapper_wound_{}.csv'.format(expNum, wound_no)
+    demo_im_file_name = desktop_dir + 'Porcine_Exp_Davis/demo/Camera_{}/'.format(demC)
     mapping_table_dir = desktop_dir + 'Close_Loop_Actuation/Device-to-Wound-Mapping-Table.csv'
     device_im_dir = desktop_dir + 'Porcine_Exp_Davis/Exp_{}/'.format(expNum)  # Camera_?
 
@@ -43,6 +44,7 @@ def DeviceParameters(wound_no, desktop_dir):
 
     parser.add_argument('--curr_datetime', default=curr_datetime, type=str, help='current date and time')
     parser.add_argument('--desktop_dir', default=desktop_dir, type=str, help='desktop_dir')
+    parser.add_argument('--demo_im_file_name', default=demo_im_file_name, type=str, help='demo_im_file_name')
     parser.add_argument('--healnet_prob_file_name', default=healnet_prob_file_name, type=str, help='healnet_prob_file_name')
     parser.add_argument('--deepmapper_prob_file_name', default=deepmapper_prob_file_name, type=str,
                         help='healnet_prob_file_name')
@@ -81,6 +83,9 @@ def DeviceParameters(wound_no, desktop_dir):
     parser.add_argument('--minCurrent', default=2.0, type=float,
                         help='maximum value of current in muA')
 
+    parser.add_argument('--hours', default=24.0, type=float,
+                        help='maximum hours')
+
     parser.add_argument('--maxEFCurrent', default=50.0, type=float,
                         help='maximum value of current in muA')
     parser.add_argument('--maxFlxCurrent', default=50.0, type=float,
@@ -92,6 +97,8 @@ def DeviceParameters(wound_no, desktop_dir):
     parser.add_argument('--maxDosageInBet', default=0.005, type=float,
                         help='maximum dosage')
 
+    parser.add_argument('--timeDelay', default=300, type=int,
+                        help='maximum dosage')
 
     parser.add_argument('--copyFreq', default=6000, type=float,
                         help='maximum dosage')

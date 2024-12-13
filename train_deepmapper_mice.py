@@ -36,7 +36,7 @@ import torch.nn as nn
 
 # import densenet as dn
 from algs.autoencoder import Autoencoder, ConvAutoencoder
-from cfgs.config_healnet import HealNetParameters
+from cfgs.config_deepmapper import DeepMapperParameters
 
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -128,9 +128,11 @@ def test(ep, device, model, writer, image_paths):
 
     xrange = np.linspace(0, len(im_orgs), len(prob_buf[:, 0]))
 
-    y_tmp = odeint(simple, np.array([1., 0., 0., 0.]), xrange, args=(np.array([F.sigmoid(model.Kh).data.cpu().numpy()[0],
-                                                                      F.sigmoid(model.Ki).data.cpu().numpy()[0],
-                                                                      F.sigmoid(model.Kp).data.cpu().numpy()[0]]),))
+    y_tmp = odeint(simple,
+                   np.array([1., 0., 0., 0.]),
+                   xrange,
+                   args=(np.array([model.Kh, model.Ki, model.Kp]),)
+                   )
     fig = plt.figure(figsize=(8, 4))
     ax = fig.add_subplot()
     ax.scatter(xrange, prob_buf[:, 0], color='r') #, label='Hemostasis')
@@ -263,7 +265,7 @@ def report(ep, device):
 
 
 def train(age='A8'):
-    args = HealNetParameters()
+    args = DeepMapperParameters()
 
     device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
 
@@ -351,7 +353,7 @@ def train(age='A8'):
                         cnt += 1
 
 
-        if (ep + 1) % 100 == 0:
+        if (ep + 1) % 10 == 0:
             print('Train Epoch [{}/{}] Loss:{:.4f}'.format(ep + 1, num_epochs, avg_loss / cnt))
             if age == "A8":
                 image_paths = create_imdirs_from_csv(age, 1, 'L', False)
@@ -360,9 +362,9 @@ def train(age='A8'):
             test(ep, device, model, writer, image_paths)
             torch.save(model.state_dict(), args.model_dir + 'checkpoint_mouse_age_{}_ep_{}.pth'.format(age, ep))
             writer.add_scalar('Loss/train_mse', avg_loss / cnt, ep)
-            writer.add_scalar('Ks/k_h', F.sigmoid(model.Kh).data.cpu().numpy()[0], ep)
-            writer.add_scalar('Ks/k_i', F.sigmoid(model.Ki).data.cpu().numpy()[0], ep)
-            writer.add_scalar('Ks/k_p', F.sigmoid(model.Kp).data.cpu().numpy()[0], ep)
+            writer.add_scalar('Ks/k_h', model.Kh, ep)
+            writer.add_scalar('Ks/k_i',model.Ki, ep)
+            writer.add_scalar('Ks/k_p', model.Kp, ep)
 
 
 if __name__ == "__main__":

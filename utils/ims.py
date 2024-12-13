@@ -57,11 +57,67 @@ def merge_zstack(directory):
     # im = final_image
     # im = im.resize((128, 128))
     #
-    # dirtmp = 'D:/WoundDataDARPA/Porcine_Exp_Davis_Processed/exp_21/' + directory.split('/')[-2] + '/'
+    # dirtmp = 'E:/data/Porcine_Exp_Davis_Processed_All/exp_23/' + directory.split('/')[-2] + '/'
     # if not os.path.exists(dirtmp):
     #     os.makedirs(dirtmp)
     # im.save(dirtmp + '{}.png'.format(directory.split('/')[-1]))
     # print("Saved : {} + /../../ + merged_{}.jpg".format(directory, directory.split('/')[-1]))
+
+    return final_image, final_coeffs_R, final_coeffs_G, final_coeffs_B
+
+
+def merge_zstack1(directory):
+    #     print('{} Begin!!!'.format(directory))
+    # Get a list of the image files
+    image_files = sorted([f for f in os.listdir(directory) if (f.endswith('.png') or f.endswith('.jpg')) and f.startswith('20')])
+
+    # Read the images
+    images = [cv2.imread(os.path.join(directory, img)) for img in image_files]
+
+    # Initialize final_coeffs for each channel
+    first_wt = pywt.wavedec2(cv2.split(images[0])[0], 'db1', level=2)
+
+    # Create deep copies of the initial coefficients for each channel
+    final_coeffs_R = copy.deepcopy(first_wt)
+    final_coeffs_G = copy.deepcopy(first_wt)
+    final_coeffs_B = copy.deepcopy(first_wt)
+
+    # Loop over each channel
+    for channel in range(3):
+        wavelet_transforms = [pywt.wavedec2(cv2.split(img)[channel], 'db1', level=2) for img in images]
+        for i in range(len(wavelet_transforms[0])):
+            for j in range(len(wavelet_transforms[0][i])):
+                max_coeff = np.max([wt[i][j] for wt in wavelet_transforms], axis=0)
+                if channel == 0:
+                    final_coeffs_R[i][j][:] = max_coeff
+                elif channel == 1:
+                    final_coeffs_G[i][j][:] = max_coeff
+                else:
+                    final_coeffs_B[i][j][:] = max_coeff
+
+    # Compute inverse wavelet transform for each channel
+    final_image_R = pywt.waverec2(final_coeffs_R, 'db1')
+    final_image_G = pywt.waverec2(final_coeffs_G, 'db1')
+    final_image_B = pywt.waverec2(final_coeffs_B, 'db1')
+
+    # Make sure they are in uint8 format and in the range [0, 255]
+    final_image_R = np.clip(final_image_R, 0, 255).astype('uint8')
+    final_image_G = np.clip(final_image_G, 0, 255).astype('uint8')
+    final_image_B = np.clip(final_image_B, 0, 255).astype('uint8')
+
+    # Merge channels back but in RGB order
+    final_image = cv2.merge((final_image_B, final_image_G, final_image_R))  # Changed the order here
+    final_image = Image.fromarray(final_image, 'RGB')
+
+    # save image to the corresponding folder
+    im = final_image
+    im = im.resize((128, 128))
+
+    dirtmp = 'E:/data/Porcine_Exp_Davis_Processed_All/exp_23/' + directory.split('/')[-2] + '/'
+    if not os.path.exists(dirtmp):
+        os.makedirs(dirtmp)
+    im.save(dirtmp + '{}.png'.format(directory.split('/')[-1]))
+    print("Saved : {} + /../../ + merged_{}.jpg".format(directory, directory.split('/')[-1]))
 
     return final_image, final_coeffs_R, final_coeffs_G, final_coeffs_B
 
@@ -134,7 +190,7 @@ def imageA(imDir, im):
 
 if __name__ == "__main__":
 
-    desktop_dir_main = 'D:/WoundDataDARPA/Porcine_Exp_Davis/exp_21/'
+    desktop_dir_main = 'E:/Data/Porcine_Exp_Davis/exp_23/'
     for ddir in os.listdir(desktop_dir_main):
         desktop_dir = desktop_dir_main + ddir + '/'
 
@@ -154,7 +210,7 @@ if __name__ == "__main__":
             for i in range(nprc):
                 time.sleep(0.1)
                 if nprc * im + i < len(all_dirs):
-                    p = mp.Process(target=merge_zstack, args=(all_dirs[nprc * im + i],))
+                    p = mp.Process(target=merge_zstack1, args=(all_dirs[nprc * im + i],))
                     p.start()
                     process.append(p)
 
